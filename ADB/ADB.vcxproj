@@ -100,7 +100,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <WarningLevel>Level3</WarningLevel>
+      <WarningLevel>Level4</WarningLevel>
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
@@ -130,6 +130,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="engine\engine.c" />
+    <ClCompile Include="engine\math\vector.c" />
+    <ClCompile Include="engine\rendering\assets.c" />
     <ClCompile Include="engine\rendering\d3d11\d3d11.c" />
     <ClCompile Include="platform\win32.c" />
     <ClCompile Include="engine\rendering\renderer.c" />
@@ -138,10 +140,13 @@
       <FileType>CppCode</FileType>
     </ClCompile>
     <ClInclude Include="engine\engine.h" />
+    <ClInclude Include="engine\math\vector.h" />
+    <ClInclude Include="engine\rendering\assets.h" />
     <ClInclude Include="engine\rendering\d3d11\d3d11.h" />
     <ClInclude Include="engine\rendering\renderer.h" />
     <ClInclude Include="parsers\parser_obj.h" />
     <ClInclude Include="platform\platform.h" />
+    <ClInclude Include="third_party\stb_image.h" />
     <ClInclude Include="utilities.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
