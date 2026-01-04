@@ -94,9 +94,45 @@ typedef struct
 render_pass * GetRenderPass        (memory_arena *Arena, RenderPassType Type, render_pass_list *PassList);
 void *        PushDataInBatchList  (memory_arena *Arena, render_batch_list *BatchList);
 
+// ==============================================
+// <Materials>
+// ==============================================
+
+typedef struct
+{
+    void *Albedo;
+    void *Normal;
+    void *Roughness;
+    void *Metallic;
+} mesh_material;
 
 // ==============================================
-// <Drawing> : Public
+// <Static Meshes>
+// ==============================================
+
+
+typedef struct renderer renderer;
+
+typedef enum
+{
+    StatisMesh_AllowCPUAccess = 1 << 0,
+} StaticMesh_Flag;
+
+
+typedef struct
+{
+    void         *Backend;
+    uint64_t      SizeInBytes;
+    uint32_t      Flags;
+    mesh_material Material;
+} static_mesh;
+
+
+static_mesh LoadStaticMeshFromDisk  (byte_string Path, renderer *Renderer);
+
+
+// ==============================================
+// <Drawing>
 // ==============================================
 
 

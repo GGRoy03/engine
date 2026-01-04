@@ -78,3 +78,20 @@ GetRenderPass(memory_arena *Arena, RenderPassType Type, render_pass_list *PassLi
 
     return &Result->Value;
 }
+
+
+// ==============================================
+// <Static Meshes> : Public
+// ==============================================
+
+static_mesh
+LoadStaticMeshFromDisk(byte_string Path, renderer *Renderer)
+{
+    static_mesh Mesh = {0};
+
+    if (IsValidByteString(Path) && Renderer)
+    {
+    }
+
+    return Mesh;
+}

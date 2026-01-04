@@ -7,7 +7,8 @@ cbuffer Constants : register(b0)
 
 cbuffer Material : register(b1)
 {
-    float Opacity;
+    float4 Color;
+    float  Opacity;
 };
 
 struct CPUToVertex
@@ -30,7 +31,7 @@ VertexToPixel VertexMain(CPUToVertex Input)
 {
     VertexToPixel Output;
     Output.Position = float4(0.f, 0.f, 0.f, 0.f);
-    Output.Color    = float4(1.f, 0.f, 0.f, 1.f);
+    Output.Color    = Color;
     return Output;
 }
 

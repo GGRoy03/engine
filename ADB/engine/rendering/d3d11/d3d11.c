@@ -205,7 +205,7 @@ D3D11Initialize(HWND HWindow)
 void
 RendererStartFrame(clear_color Color, renderer *Renderer)
 {
-    Renderer->DeviceContext->lpVtbl->ClearRenderTargetView(Renderer->DeviceContext, Renderer->RenderView, &Color);
+    Renderer->DeviceContext->lpVtbl->ClearRenderTargetView(Renderer->DeviceContext, Renderer->RenderView, (FLOAT *)&Color);
 }
 
 void
