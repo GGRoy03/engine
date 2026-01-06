@@ -3,5 +3,5 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 
-typedef struct renderer renderer;
-renderer * D3D11Initialize  (HWND HWindow);
+typedef struct d3d11_renderer d3d11_renderer;
+d3d11_renderer * D3D11Initialize(HWND HWindow, memory_arena *Arena);

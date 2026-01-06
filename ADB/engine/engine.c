@@ -24,7 +24,7 @@ UpdateEngine(int WindowWidth, int WindowHeight, renderer *Renderer, engine_memor
 	{
 		asset_file_data AssetData = ParseObjFromFile(ByteStringLiteral("data/strawberry.obj"), EngineMemory);
 
-		D3D11UploadStaticMesh(AssetData, EngineMemory, Renderer);
+		CreateStaticMesh(AssetData, Renderer);
 		
 
 		// TODO: From the asset_file_data we want to initialize the rendering objects. The idea is to construct a static mesh from the mesh_data. Just do a naive implementation.
@@ -35,6 +35,6 @@ UpdateEngine(int WindowWidth, int WindowHeight, renderer *Renderer, engine_memor
 
 	clear_color Color = (clear_color){.R = 0.f, .G = 0.f, .B = 0.f, .A = 1.f};
 	RendererStartFrame(Color, Renderer);
-	RendererDrawFrame(WindowWidth, WindowHeight, Renderer);
+	RendererDrawFrame(WindowWidth, WindowHeight, EngineMemory, Renderer);
 	RendererFlushFrame(Renderer);
 } 

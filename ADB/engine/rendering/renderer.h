@@ -1,6 +1,9 @@
 #pragma once
 
 #include "assets.h"
+#include "engine/math/matrix.h"
+
+typedef struct renderer renderer;
 
 
 typedef enum
@@ -97,48 +100,133 @@ render_pass * GetRenderPass        (memory_arena *Arena, RenderPassType Type, re
 void *        PushDataInBatchList  (memory_arena *Arena, render_batch_list *BatchList);
 
 // ==============================================
-// <Materials>
-// ==============================================
-
-typedef struct
-{
-    void *Albedo;
-    void *Normal;
-    void *Roughness;
-    void *Metallic;
-} mesh_material;
-
-// ==============================================
-// <Static Meshes>
+// <Resources> 
 // ==============================================
 
 
-typedef struct renderer renderer;
+#define MAX_RENDERER_BASE_RESOURCE 128
+#define MAX_SUBMESH_COUNT     32
+#define MAX_MATERIAL_COUNT    64
+#define MAX_STATIC_MESH_COUNT 128
+
 
 typedef enum
 {
-    StatisMesh_AllowCPUAccess = 1 << 0,
-} StaticMesh_Flag;
+    RendererBaseResource_None = 0,
+
+    RendererBaseResource_Texture2D    = 1,
+    RendererBaseResource_TextureView  = 2,
+    RendererBaseResource_VertexBuffer = 3,
+
+    RendererBaseResource_Count = 4,
+} RendererBaseResource_Type;
+
+
+typedef enum
+{
+    RendererCompositeResource_None = 0,
+
+    RendererCompositeResource_Material   = 1,
+    RendererCompositeResource_StaticMesh = 2,
+
+    RendererCompositeResource_Count = 3,
+} RendererCompositeResource_Type;
 
 
 typedef struct
 {
-    void         *Backend;
-    uint64_t      SizeInBytes;
-    uint32_t      Flags;
-    mesh_material Material;
-} static_mesh;
+    uint32_t Free;
+    uint32_t SameType;
+} renderer_resource_link;
 
 
-static_mesh LoadStaticMeshFromDisk  (byte_string Path, renderer *Renderer);
+typedef struct
+{
+    RendererBaseResource_Type Type;
+    void                     *Backend;
+    uint32_t                 _RefCount;
+    renderer_resource_link    Next;
+} renderer_base_resource;
+
+
+typedef struct
+{
+    uint32_t                Id;
+    renderer_base_resource *Maps[MaterialMap_Count];
+    renderer_resource_link  Next;
+} renderer_material;
+
+
+typedef struct
+{
+    uint64_t           VertexCount;
+    uint64_t           VertexStart;
+    renderer_material *Material;
+} renderer_static_submesh;
+
+
+typedef struct
+{
+    renderer_base_resource *VertexBuffer;
+    uint64_t                VertexBufferSize;
+    renderer_static_submesh Submeshes[MAX_SUBMESH_COUNT];
+    uint32_t                SubmeshCount;
+    renderer_resource_link  Next;
+} renderer_static_mesh;
+
+
+typedef struct
+{
+    // Base Resources
+
+    renderer_base_resource Resources[MAX_RENDERER_BASE_RESOURCE];
+    uint32_t               FirstFree;
+    uint32_t               FreeCount;
+    uint32_t               FirstByBaseType[RendererBaseResource_Count];
+
+    // Composite Resources
+
+    renderer_material      Materials[MAX_MATERIAL_COUNT];
+    renderer_static_mesh   StaticMeshes[MAX_STATIC_MESH_COUNT];
+    uint32_t               FreeByCompositeType [RendererCompositeResource_Count];
+    uint32_t               FirstByCompositeType[RendererCompositeResource_Count];
+    uint32_t               CountByCompositeType[RendererCompositeResource_Count];
+} renderer_resource_manager;
+
+
+typedef struct
+{
+    mat4x4 World;
+    mat4x4 View;
+    mat4x4 Projection;
+} mesh_transform_uniform_buffer;
+
+
+
+void InitializeResourceManager   (renderer_resource_manager *ResourceManager);
+
+typedef struct
+{
+    renderer_static_mesh **Data;
+    uint32_t               Count;
+} static_mesh_list;
+
+void             CreateStaticMesh            (asset_file_data AssetFile, renderer *Renderer);
+static_mesh_list RendererGetAllStaticMeshes  (engine_memory *EngineMemory, renderer *Renderer);
+
+
+// 
+// Backend specific functions that must be implemented by every backend
+//
+
+
+void * RendererCreateTexture       (loaded_texture Texture, renderer *Renderer);
+void * RendererCreateVertexBuffer  (void *Data, uint64_t Size, renderer *Renderer);
 
 
 // ==============================================
 // <Drawing>
 // ==============================================
-
-
-typedef struct renderer renderer;
 
 
 typedef struct
@@ -148,13 +236,17 @@ typedef struct
 
 
 void RendererStartFrame  (clear_color Color, renderer *Renderer);
-void RendererDrawFrame   (int Width, int Height, renderer *Renderer);
+void RendererDrawFrame   (int Width, int Height, engine_memory *EngineMemory, renderer *Renderer);
 void RendererFlushFrame  (renderer *Renderer);
 
-
 // ==============================================
-// <Temporary>
+// <...> 
 // ==============================================
 
-typedef struct engine_memory engine_memory;
-void D3D11UploadStaticMesh  (asset_file_data AssetFile, engine_memory *EngineMemory, renderer *Renderer);
+typedef struct renderer
+{
+    void                     *Backend;
+    render_pass_list          PassList;
+    memory_arena             *FrameArena;
+    renderer_resource_manager Resources;
+} renderer;

@@ -27,35 +27,8 @@
 #define MAX_MATERIAL_COUNT 64
 #define MAX_STATIC_MESH_COUNT 128
 
-typedef struct
-{
-    // Properties
-
-    uint32_t Id;
-
-    // Maps
-
-    ID3D11ShaderResourceView *Maps[MaterialMap_Count];
-
-} d3d11_material;
 
 typedef struct
-{
-    uint64_t VertexCount;
-    uint64_t VertexStart;
-    uint32_t MaterialId;
-} d3d11_static_submesh;
-
-typedef struct
-{
-    ID3D11Buffer         *VertexBuffer;
-    uint64_t              VertexBufferSize;
-    d3d11_static_submesh *Submeshes;
-    uint32_t              SubmeshCount;
-} d3d11_static_mesh;
-
-
-typedef struct renderer
 {
     ID3D11Device           *Device;
     ID3D11DeviceContext    *DeviceContext;
@@ -66,7 +39,6 @@ typedef struct renderer
 
     ID3D11Buffer          *UniformBuffer;
     ID3D11RasterizerState *RasterState;
-    ID3D11Buffer          *VtxBuffer;
 
     // Base Objects
 
@@ -78,44 +50,14 @@ typedef struct renderer
     ID3D11VertexShader    *MeshVertexShader;
     ID3D11PixelShader     *MeshPixelShader;
     ID3D11SamplerState    *MeshSamplerState;
-
-    // Resources
-
-    d3d11_material         Materials[MAX_MATERIAL_COUNT];
-    uint32_t               MaterialCount;
-    d3d11_static_mesh      StaticMeshes[MAX_STATIC_MESH_COUNT];
-    uint32_t               StaticMeshCount;
-
-    // Frame Data
-
-    render_pass_list       PassList;
-    memory_arena          *FrameArena;
-} renderer;
+} d3d11_renderer;
 
 
-typedef struct
+d3d11_renderer *
+D3D11Initialize(HWND HWindow, memory_arena *Arena)
 {
-    mat4x4 World;
-    mat4x4 View;
-    mat4x4 Projection;
-} d3d11_transform_uniform_buffer;
-
-
-renderer *
-D3D11Initialize(HWND HWindow)
-{
-    renderer *Result = malloc(sizeof(renderer));
+    d3d11_renderer *Result = PushStruct(Arena, d3d11_renderer);
     memset(Result, 0, sizeof(renderer));
-
-    {
-        memory_arena_params Params = {0};
-        Params.AllocatedFromFile = __FILE__;
-        Params.AllocatedFromLine = __LINE__;
-        Params.CommitSize        = MiB(16);
-        Params.ReserveSize       = MiB(128);
-
-        Result->FrameArena = AllocateArena(Params);
-    }
 
     {
         UINT CreateFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
@@ -178,16 +120,6 @@ D3D11Initialize(HWND HWindow)
     }
 
     {
-        D3D11_BUFFER_DESC Desc = {0};
-        Desc.ByteWidth      = KiB(64);
-        Desc.Usage          = D3D11_USAGE_DYNAMIC;
-        Desc.BindFlags      = D3D11_BIND_VERTEX_BUFFER;
-        Desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-
-        Result->Device->lpVtbl->CreateBuffer(Result->Device, &Desc, 0,&Result->VtxBuffer);
-    }
-
-    {
         Result->Device->lpVtbl->CreateVertexShader(Result->Device, MeshVertexShaderBytes , sizeof(MeshVertexShaderBytes), 0, &Result->MeshVertexShader);
         Result->Device->lpVtbl->CreatePixelShader (Result->Device, MeshPixelShaderBytes  , sizeof(MeshPixelShaderBytes) , 0, &Result->MeshPixelShader );
 
@@ -203,7 +135,7 @@ D3D11Initialize(HWND HWindow)
 
     {
         D3D11_BUFFER_DESC Desc = {0};
-        Desc.ByteWidth      = sizeof(d3d11_transform_uniform_buffer);
+        Desc.ByteWidth      = sizeof(mesh_transform_uniform_buffer);
         Desc.Usage          = D3D11_USAGE_DYNAMIC;
         Desc.BindFlags      = D3D11_BIND_CONSTANT_BUFFER;
         Desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
@@ -260,77 +192,19 @@ D3D11Initialize(HWND HWindow)
 // ==============================================
 
 
-void
-D3D11UploadStaticMesh(asset_file_data AssetFile, engine_memory *EngineMemory, renderer *Renderer)
+void *
+RendererCreateVertexBuffer(void *Data, uint64_t Size, renderer *Renderer)
 {
-    d3d11_static_mesh *StaticMesh = Renderer->StaticMeshes + Renderer->StaticMeshCount++;
+    ID3D11Buffer *Result = 0;
 
-    ID3D11Device *Device = Renderer->Device;
-
-    d3d11_material **CreatedMaterials = PushArray(EngineMemory->FrameMemory, d3d11_material *, AssetFile.MaterialCount);
-
-    for(uint32_t MaterialIdx = 0; MaterialIdx < AssetFile.MaterialCount; ++MaterialIdx)
+    if (Data && Size && Renderer)
     {
-        // Obviously this is incorrect, just trying to prototype something. We would ask something to give us a slot to write our materials into.
-
-        d3d11_material *Material = &Renderer->Materials[MaterialIdx];
-
-        for (MaterialMap_Type MapType = MaterialMap_Color; MapType < MaterialMap_Count; ++MapType)
-        {
-            loaded_texture Loaded = AssetFile.Materials[MaterialIdx].Textures[MapType];
-
-            if (Loaded.Data && Loaded.Width && Loaded.Height && Loaded.BytesPerPixel == 4)
-            {
-                D3D11_TEXTURE2D_DESC TextureDesc =
-                {
-                    .Width              = Loaded.Width,
-                    .Height             = Loaded.Height,
-                    .MipLevels          = 1,
-                    .ArraySize          = 1,
-                    .Format             = DXGI_FORMAT_R8G8B8A8_UNORM,
-                    .SampleDesc.Count   = 1,
-                    .SampleDesc.Quality = 0,
-                    .Usage              = D3D11_USAGE_IMMUTABLE,
-                    .BindFlags          = D3D11_BIND_SHADER_RESOURCE,
-                    .CPUAccessFlags     = 0,
-                    .MiscFlags          = 0,
-                };
-
-                D3D11_SUBRESOURCE_DATA InitialData =
-                {
-                    .pSysMem     = Loaded.Data,
-                    .SysMemPitch = Loaded.Width * Loaded.BytesPerPixel,
-                };
-
-                ID3D11Texture2D *Texture = 0;
-                Device->lpVtbl->CreateTexture2D(Device, &TextureDesc, &InitialData, &Texture);
-                if (Texture)
-                {
-                    D3D11_SHADER_RESOURCE_VIEW_DESC TextureViewDesc =
-                    {
-                        .Format                    = TextureDesc.Format,
-                        .ViewDimension             = D3D11_SRV_DIMENSION_TEXTURE2D,
-                        .Texture2D.MostDetailedMip = 0,
-                        .Texture2D.MipLevels       = 1,
-                    };
-
-                    Device->lpVtbl->CreateShaderResourceView(Device, (ID3D11Resource *)Texture, &TextureViewDesc, &Material->Maps[MapType]);
-
-                    Texture->lpVtbl->Release(Texture);
-                }
-            }
-        }
-
-        CreatedMaterials[MaterialIdx] = Material;
-    }
-
-    // We upload all of the geometry inside a single buffer. This means we force a single vertex setup right now.
-    {
-        // Should usage be immutable in some cases?
+        d3d11_renderer *D3D11 = (d3d11_renderer *)Renderer->Backend;
+        ID3D11Device   *Device = D3D11->Device;
 
         D3D11_BUFFER_DESC Desc =
         {
-            .ByteWidth           = AssetFile.VertexCount * sizeof(mesh_vertex_data),
+            .ByteWidth           = Size,
             .Usage               = D3D11_USAGE_DEFAULT,
             .BindFlags           = D3D11_BIND_VERTEX_BUFFER,
             .CPUAccessFlags      = 0,
@@ -340,37 +214,68 @@ D3D11UploadStaticMesh(asset_file_data AssetFile, engine_memory *EngineMemory, re
 
         D3D11_SUBRESOURCE_DATA InitialData =
         {
-            .pSysMem          = AssetFile.Vertices,
+            .pSysMem          = Data,
             .SysMemPitch      = 0,
             .SysMemSlicePitch = 0,
         };
 
-        HRESULT Error = Device->lpVtbl->CreateBuffer(Device, &Desc, &InitialData, &StaticMesh->VertexBuffer);
-        assert(SUCCEEDED(Error));
+        Device->lpVtbl->CreateBuffer(Device, &Desc, &InitialData, &Result);
     }
 
-    // Then we have to initialize all of the submeshes. The issue is that I am unsure how to batch them.
-    // If they all have the same material they can be batched together right? But are they parsed as such?
-    // I think they should be? At least, we'll assume that for now.
-    {
-        // Obviously we don't want to malloc here. Do we still care about the submesh idea here?
-        // Kind of unsure. If it's the case well the idea is just to mark their start/count such that
-        // we can send the draw call. We'd do the same thing for indices once we have them.
-
-        StaticMesh->Submeshes    = malloc(AssetFile.SubmeshCount * sizeof(d3d11_static_submesh));
-        StaticMesh->SubmeshCount = AssetFile.SubmeshCount;
-
-        for (uint32_t Idx = 0; Idx < AssetFile.SubmeshCount; ++Idx)
-        {
-            submesh_data SubAssetFile = AssetFile.Submeshes[Idx];
-
-            StaticMesh->Submeshes[Idx].VertexCount = SubAssetFile.VertexCount;
-            StaticMesh->Submeshes[Idx].VertexStart = SubAssetFile.VertexOffset;
-            StaticMesh->Submeshes[Idx].MaterialId  = CreatedMaterials[SubAssetFile.MaterialId]->Id;
-        }
-    }
+    return Result;
 }
 
+void *
+RendererCreateTexture(loaded_texture LoadedTexture, renderer *Renderer)
+{
+    ID3D11ShaderResourceView *Result = 0;
+
+    if (LoadedTexture.Data && LoadedTexture.Width && LoadedTexture.Height && LoadedTexture.BytesPerPixel == 4)
+    {
+        d3d11_renderer *D3D11 = (d3d11_renderer *)Renderer->Backend;
+        ID3D11Device   *Device = D3D11->Device;
+
+        D3D11_TEXTURE2D_DESC TextureDesc =
+        {
+            .Width              = LoadedTexture.Width,
+            .Height             = LoadedTexture.Height,
+            .MipLevels          = 1,
+            .ArraySize          = 1,
+            .Format             = DXGI_FORMAT_R8G8B8A8_UNORM,
+            .SampleDesc.Count   = 1,
+            .SampleDesc.Quality = 0,
+            .Usage              = D3D11_USAGE_IMMUTABLE,
+            .BindFlags          = D3D11_BIND_SHADER_RESOURCE,
+            .CPUAccessFlags     = 0,
+            .MiscFlags          = 0,
+        };
+        
+        D3D11_SUBRESOURCE_DATA InitialData =
+        {
+            .pSysMem     = LoadedTexture.Data,
+            .SysMemPitch = LoadedTexture.Width * LoadedTexture.BytesPerPixel,
+        };
+        
+        ID3D11Texture2D *Texture = 0;
+        Device->lpVtbl->CreateTexture2D(Device, &TextureDesc, &InitialData, &Texture);
+        if (Texture)
+        {
+            D3D11_SHADER_RESOURCE_VIEW_DESC TextureViewDesc =
+            {
+                .Format                    = TextureDesc.Format,
+                .ViewDimension             = D3D11_SRV_DIMENSION_TEXTURE2D,
+                .Texture2D.MostDetailedMip = 0,
+                .Texture2D.MipLevels       = 1,
+            };
+        
+            Device->lpVtbl->CreateShaderResourceView(Device, (ID3D11Resource *)Texture, &TextureViewDesc, &Result);
+
+            Texture->lpVtbl->Release(Texture);
+        }
+    }
+
+    return Result;
+}
 
 
 // ==============================================
@@ -381,20 +286,25 @@ D3D11UploadStaticMesh(asset_file_data AssetFile, engine_memory *EngineMemory, re
 void
 RendererStartFrame(clear_color Color, renderer *Renderer)
 {
-    Renderer->DeviceContext->lpVtbl->ClearRenderTargetView(Renderer->DeviceContext, Renderer->RenderView, (FLOAT *)&Color);
+    d3d11_renderer         *D3D11      =  (d3d11_renderer *)Renderer->Backend;
+    ID3D11DeviceContext    *Context    = D3D11->DeviceContext;
+    ID3D11RenderTargetView *RenderView = D3D11->RenderView;
+
+    Context->lpVtbl->ClearRenderTargetView(Context, RenderView, (FLOAT *)&Color);
 }
 
 // Obviously this is a super hardcoded implementation and we would rely on some sort of batcher. I just want to get something on screen.
 // Then we will clean up all of this code and augment it. As far as I understand the only thing I am missing is the matrices.
 
 void
-RendererDrawFrame(int Width, int Height, renderer *Renderer)
+RendererDrawFrame(int Width, int Height, engine_memory *EngineMemory, renderer *Renderer)
 {
-    ID3D11DeviceContext *Context = Renderer->DeviceContext;
+    d3d11_renderer      *D3D11   = (d3d11_renderer *)Renderer->Backend;
+    ID3D11DeviceContext *Context = D3D11->DeviceContext;
 
     // TODO: Update the transform uniform buffer
     {
-        d3d11_transform_uniform_buffer TransformBuffer = {0};
+        mesh_transform_uniform_buffer TransformBuffer = {0};
 
         {
             mat4x4 *World = &TransformBuffer.World;
@@ -444,43 +354,54 @@ RendererDrawFrame(int Width, int Height, renderer *Renderer)
         }
 
         D3D11_MAPPED_SUBRESOURCE Mapped;
-        Context->lpVtbl->Map(Context, (ID3D11Resource *)Renderer->TransformUniformBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &Mapped);
+        Context->lpVtbl->Map(Context, (ID3D11Resource *)D3D11->TransformUniformBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &Mapped);
         if (Mapped.pData)
         {
             memcpy(Mapped.pData, &TransformBuffer, sizeof(TransformBuffer));
-            Context->lpVtbl->Unmap(Context, (ID3D11Resource *)Renderer->TransformUniformBuffer, 0);
+            Context->lpVtbl->Unmap(Context, (ID3D11Resource *)D3D11->TransformUniformBuffer, 0);
         }
     }
 
     D3D11_VIEWPORT Viewport = { 0.f, 0.f, Width, Height, 0.f, 1.f };
-    Context->lpVtbl->RSSetState(Context, Renderer->RasterState);
+    Context->lpVtbl->RSSetState(Context, D3D11->RasterState);
     Context->lpVtbl->RSSetViewports(Context, 1, &Viewport);
 
     Context->lpVtbl->IASetPrimitiveTopology(Context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    Context->lpVtbl->IASetInputLayout(Context, Renderer->MeshInputLayout);
+    Context->lpVtbl->IASetInputLayout(Context, D3D11->MeshInputLayout);
 
-    Context->lpVtbl->VSSetConstantBuffers(Context, 0, 1, &Renderer->TransformUniformBuffer);
-    Context->lpVtbl->VSSetShader(Context, Renderer->MeshVertexShader, 0, 0);
-    Context->lpVtbl->PSSetShader(Context, Renderer->MeshPixelShader , 0, 0);
+    Context->lpVtbl->VSSetConstantBuffers(Context, 0, 1, &D3D11->TransformUniformBuffer);
+    Context->lpVtbl->VSSetShader(Context, D3D11->MeshVertexShader, 0, 0);
+    Context->lpVtbl->PSSetShader(Context, D3D11->MeshPixelShader , 0, 0);
 
-    Context->lpVtbl->OMSetRenderTargets(Context, 1, &Renderer->RenderView, 0);
+    Context->lpVtbl->OMSetRenderTargets(Context, 1, &D3D11->RenderView, 0);
     // Context->lpVtbl->OMSetBlendState(Context, Renderer->BlendState, 0, 0xFFFFFFFF);
 
-    for (uint32_t Idx = 0; Idx < Renderer->StaticMeshCount; ++Idx)
-    {
-        d3d11_static_mesh *StaticMesh = Renderer->StaticMeshes + Idx;
+    static_mesh_list MeshList = RendererGetAllStaticMeshes(EngineMemory, Renderer);
 
-        UINT32 Stride = sizeof(mesh_vertex_data);
-        UINT32 Offset = 0;
-        Context->lpVtbl->IASetVertexBuffers(Context, 0, 1, &StaticMesh->VertexBuffer, &Stride, &Offset);
+    for (uint32_t Idx = 0; Idx < MeshList.Count; ++Idx)
+    {
+        renderer_static_mesh *StaticMesh = MeshList.Data[Idx];
+
+        ID3D11Buffer *VertexBuffer = (ID3D11Buffer *)StaticMesh->VertexBuffer->Backend;
+        UINT32        Stride       = sizeof(mesh_vertex_data);
+        UINT32        Offset       = 0;
+        Context->lpVtbl->IASetVertexBuffers(Context, 0, 1, &VertexBuffer, &Stride, &Offset);
 
         for (uint32_t SubmeshIdx = 0; SubmeshIdx < StaticMesh->SubmeshCount; ++SubmeshIdx)
         {
-            d3d11_static_submesh *Submesh  = StaticMesh->Submeshes + SubmeshIdx;
-            d3d11_material       *Material = Renderer->Materials + Submesh->MaterialId;
+            renderer_static_submesh *Submesh = StaticMesh->Submeshes + SubmeshIdx;
 
-            Context->lpVtbl->PSSetSamplers(Context, 0, 1, &Renderer->MeshSamplerState);
-            Context->lpVtbl->PSSetShaderResources(Context, 0, 1, &Material->Maps[MaterialMap_Color]);
+            ID3D11ShaderResourceView *MaterialView[MaterialMap_Count] = {0};
+            {
+                renderer_material *Material = Submesh->Material;
+
+                MaterialView[MaterialMap_Color]     = Material->Maps[MaterialMap_Color]     ? Material->Maps[MaterialMap_Color]->Backend     : 0;
+                // MaterialView[MaterialMap_Normal]    = Material->Maps[MaterialMap_Normal]    ? Material->Maps[MaterialMap_Normal]->Backend    : 0;
+                // MaterialView[MaterialMap_Roughness] = Material->Maps[MaterialMap_Roughness] ? Material->Maps[MaterialMap_Roughness]->Backend : 0;
+            }
+
+            Context->lpVtbl->PSSetSamplers(Context, 0, 1, &D3D11->MeshSamplerState);
+            Context->lpVtbl->PSSetShaderResources(Context, 0, 1, MaterialView);
 
             Context->lpVtbl->Draw(Context, Submesh->VertexCount, Submesh->VertexStart);
         }
@@ -490,5 +411,8 @@ RendererDrawFrame(int Width, int Height, renderer *Renderer)
 void
 RendererFlushFrame(renderer *Renderer)
 {
-    Renderer->SwapChain->lpVtbl->Present(Renderer->SwapChain, 0, 0);
+    d3d11_renderer  *D3D11     = (d3d11_renderer *)Renderer->Backend;
+    IDXGISwapChain1 *SwapChain = D3D11->SwapChain;
+
+    SwapChain->lpVtbl->Present(SwapChain, 0, 0);
 }

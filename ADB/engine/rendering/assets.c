@@ -12,6 +12,7 @@ LoadTextureFromDisk(platform_work_queue *Queue, texture_to_load *ToLoad)
 	assert(Queue);
 	assert(ToLoad);
 
+	// In which cases is this needed? All?
 	stbi_set_flip_vertically_on_load(1);
 
 	// TODO:
