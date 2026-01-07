@@ -2,6 +2,7 @@
 
 #include "assets.h"
 #include "engine/math/matrix.h"
+#include <engine/math/vector.h>
 
 typedef struct renderer renderer;
 
@@ -202,14 +203,15 @@ typedef struct
 } mesh_transform_uniform_buffer;
 
 
-
-void InitializeResourceManager   (renderer_resource_manager *ResourceManager);
-
 typedef struct
 {
     renderer_static_mesh **Data;
     uint32_t               Count;
 } static_mesh_list;
+
+
+void InitializeResourceManager   (renderer_resource_manager *ResourceManager);
+
 
 void             CreateStaticMesh            (asset_file_data AssetFile, renderer *Renderer);
 static_mesh_list RendererGetAllStaticMeshes  (engine_memory *EngineMemory, renderer *Renderer);
@@ -222,6 +224,29 @@ static_mesh_list RendererGetAllStaticMeshes  (engine_memory *EngineMemory, rende
 
 void * RendererCreateTexture       (loaded_texture Texture, renderer *Renderer);
 void * RendererCreateVertexBuffer  (void *Data, uint64_t Size, renderer *Renderer);
+
+// ==============================================
+// <Camera>
+// ==============================================
+
+
+typedef struct
+{
+    vec3 Position;
+    vec3 Forward;
+    vec3 Up;
+
+    float FovY;
+    float AspectRatio;
+    float NearPlane;
+    float FarPlane;
+} camera;
+
+camera CreateCamera               (vec3 Position, float FovY, float AspectRatio);
+
+mat4x4 GetCameraWorldMatrix       (camera *Camera);
+mat4x4 GetCameraViewMatrix        (camera *Camera);
+mat4x4 GetCameraProjectionMatrix  (camera *Camera);
 
 
 // ==============================================
@@ -249,4 +274,5 @@ typedef struct renderer
     render_pass_list          PassList;
     memory_arena             *FrameArena;
     renderer_resource_manager Resources;
+    camera                    Camera;
 } renderer;

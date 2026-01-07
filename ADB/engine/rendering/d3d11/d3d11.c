@@ -1,10 +1,8 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#include <windowsx.h>
 
 #define D3D11_NO_HELPERS
 #include <d3d11.h>
-#include <d3dcompiler.h>
 #include <dxgi1_3.h>
 
 #pragma comment (lib, "d3d11")
@@ -12,14 +10,10 @@
 #pragma comment (lib, "dxguid")
 #pragma comment (lib, "d3dcompiler")
 
-#include <assert.h>
-#include <math.h>
-
 #include "utilities.h"
 #include "platform/platform.h"
 #include "engine/rendering/renderer.h"
 #include "engine/rendering/assets.h"
-#include "engine/math/matrix.h"
 
 #include "mesh_vertex_shader.h"
 #include "mesh_pixel_shader.h"
@@ -34,15 +28,6 @@ typedef struct
     ID3D11DeviceContext    *DeviceContext;
     IDXGISwapChain1        *SwapChain;
     ID3D11RenderTargetView *RenderView;
-    ID3D11BlendState       *BlendState;
-    ID3D11SamplerState     *AtlasSamplerState;
-
-    ID3D11Buffer          *UniformBuffer;
-    ID3D11RasterizerState *RasterState;
-
-    // Base Objects
-
-    ID3D11Buffer *TransformUniformBuffer;
 
     // Mesh Objects
 
@@ -50,6 +35,8 @@ typedef struct
     ID3D11VertexShader    *MeshVertexShader;
     ID3D11PixelShader     *MeshPixelShader;
     ID3D11SamplerState    *MeshSamplerState;
+    ID3D11RasterizerState *MeshRasterizerState;
+    ID3D11Buffer          *MeshTransformUniformBuffer;
 } d3d11_renderer;
 
 
@@ -140,21 +127,7 @@ D3D11Initialize(HWND HWindow, memory_arena *Arena)
         Desc.BindFlags      = D3D11_BIND_CONSTANT_BUFFER;
         Desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
 
-        Result->Device->lpVtbl->CreateBuffer(Result->Device,&Desc,0, &Result->TransformUniformBuffer);
-    }
-
-    {
-        D3D11_BLEND_DESC Desc = {0};
-        Desc.RenderTarget[0].BlendEnable           = TRUE;
-        Desc.RenderTarget[0].SrcBlend              = D3D11_BLEND_SRC_ALPHA;
-        Desc.RenderTarget[0].DestBlend             = D3D11_BLEND_INV_SRC_ALPHA;
-        Desc.RenderTarget[0].BlendOp               = D3D11_BLEND_OP_ADD;
-        Desc.RenderTarget[0].SrcBlendAlpha         = D3D11_BLEND_ONE;
-        Desc.RenderTarget[0].DestBlendAlpha        = D3D11_BLEND_ZERO;
-        Desc.RenderTarget[0].BlendOpAlpha          = D3D11_BLEND_OP_ADD;
-        Desc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
-
-        Result->Device->lpVtbl->CreateBlendState(Result->Device, &Desc, &Result->BlendState);
+        Result->Device->lpVtbl->CreateBuffer(Result->Device,&Desc,0, &Result->MeshTransformUniformBuffer);
     }
 
     {
@@ -180,7 +153,7 @@ D3D11Initialize(HWND HWindow, memory_arena *Arena)
         Desc.MultisampleEnable     = FALSE;
         Desc.AntialiasedLineEnable = FALSE;
 
-        Result->Device->lpVtbl->CreateRasterizerState(Result->Device, &Desc, &Result->RasterState);
+        Result->Device->lpVtbl->CreateRasterizerState(Result->Device, &Desc, &Result->MeshRasterizerState);
     }
 
     return Result;
@@ -229,6 +202,8 @@ void *
 RendererCreateTexture(loaded_texture LoadedTexture, renderer *Renderer)
 {
     ID3D11ShaderResourceView *Result = 0;
+
+    // The BytesPerPixel check is artificial and should be removed.
 
     if (LoadedTexture.Data && LoadedTexture.Width && LoadedTexture.Height && LoadedTexture.BytesPerPixel == 4)
     {
@@ -294,7 +269,7 @@ RendererStartFrame(clear_color Color, renderer *Renderer)
 }
 
 // Obviously this is a super hardcoded implementation and we would rely on some sort of batcher. I just want to get something on screen.
-// Then we will clean up all of this code and augment it. As far as I understand the only thing I am missing is the matrices.
+// Then we will clean up all of this code and augment it.
 
 void
 RendererDrawFrame(int Width, int Height, engine_memory *EngineMemory, renderer *Renderer)
@@ -302,74 +277,31 @@ RendererDrawFrame(int Width, int Height, engine_memory *EngineMemory, renderer *
     d3d11_renderer      *D3D11   = (d3d11_renderer *)Renderer->Backend;
     ID3D11DeviceContext *Context = D3D11->DeviceContext;
 
-    // TODO: Update the transform uniform buffer
     {
-        mesh_transform_uniform_buffer TransformBuffer = {0};
-
+        mesh_transform_uniform_buffer TransformBuffer =
         {
-            mat4x4 *World = &TransformBuffer.World;
-
-            World->c0r0 = 1.f;
-            World->c1r1 = 1.f;
-            World->c2r2 = 1.f;
-            World->c3r3 = 1.f;
-        }
-
-        // View
-        {
-            mat4x4 *View = &TransformBuffer.View;
-
-            vec3 Eye    = {0.f, 0.f, -20.f};
-            vec3 Center = {0.f, 0.f, 0.f  };
-            vec3 Up     = {0.f, 1.f, 0.f  };
-
-            vec3 Forward = Vec3Normalize(Vec3Subtract(Center, Eye));
-            vec3 Right   = Vec3Normalize(Vec3Cross(Up, Forward));
-            vec3 NewUp   = Vec3Cross(Forward, Right);
-
-            View->c0r0 = Right.X;    View->c0r1 = NewUp.X;    View->c0r2 = Forward.X; View->c0r3 = 0.f;
-            View->c1r0 = Right.Y;    View->c1r1 = NewUp.Y;    View->c1r2 = Forward.Y; View->c1r3 = 0.f;
-            View->c2r0 = Right.Z;    View->c2r1 = NewUp.Z;    View->c2r2 = Forward.Z; View->c2r3 = 0.f;
-            View->c3r0 = -Vec3Dot(Right, Eye);
-            View->c3r1 = -Vec3Dot(NewUp, Eye);
-            View->c3r2 = -Vec3Dot(Forward, Eye);
-            View->c3r3 = 1.f;
-        }
-
-        // Projection
-        {
-            mat4x4 *Projection = &TransformBuffer.Projection;
-
-            float FovY        = 3.14159f / 4.f;
-            float AspectRatio = 1920.f / 1080.f;
-            float Near        = 0.1f;
-            float Far         = 100.f;
-
-            float F = 1.f / tanf(FovY / 2.f);
-
-            Projection->c0r0 = F / AspectRatio; Projection->c0r1 = 0.f; Projection->c0r2 = 0.f;                                Projection->c0r3 = 0.f;
-            Projection->c1r0 = 0.f;             Projection->c1r1 = F;   Projection->c1r2 = 0.f;                                Projection->c1r3 = 0.f;
-            Projection->c2r0 = 0.f;             Projection->c2r1 = 0.f; Projection->c2r2 = (Far + Near) / (Far - Near);        Projection->c2r3 = 1.f;
-            Projection->c3r0 = 0.f;             Projection->c3r1 = 0.f; Projection->c3r2 = (-2.f * Far * Near) / (Far - Near); Projection->c3r3 = 0.f;
-        }
+            .World      = GetCameraWorldMatrix(&Renderer->Camera),
+            .View       = GetCameraViewMatrix(&Renderer->Camera),
+            .Projection = GetCameraProjectionMatrix(&Renderer->Camera),
+        };
 
         D3D11_MAPPED_SUBRESOURCE Mapped;
-        Context->lpVtbl->Map(Context, (ID3D11Resource *)D3D11->TransformUniformBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &Mapped);
+        Context->lpVtbl->Map(Context, (ID3D11Resource *)D3D11->MeshTransformUniformBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &Mapped);
         if (Mapped.pData)
         {
             memcpy(Mapped.pData, &TransformBuffer, sizeof(TransformBuffer));
-            Context->lpVtbl->Unmap(Context, (ID3D11Resource *)D3D11->TransformUniformBuffer, 0);
+            Context->lpVtbl->Unmap(Context, (ID3D11Resource *)D3D11->MeshTransformUniformBuffer, 0);
         }
     }
 
     D3D11_VIEWPORT Viewport = { 0.f, 0.f, Width, Height, 0.f, 1.f };
-    Context->lpVtbl->RSSetState(Context, D3D11->RasterState);
+    Context->lpVtbl->RSSetState(Context, D3D11->MeshRasterizerState);
     Context->lpVtbl->RSSetViewports(Context, 1, &Viewport);
 
     Context->lpVtbl->IASetPrimitiveTopology(Context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
     Context->lpVtbl->IASetInputLayout(Context, D3D11->MeshInputLayout);
 
-    Context->lpVtbl->VSSetConstantBuffers(Context, 0, 1, &D3D11->TransformUniformBuffer);
+    Context->lpVtbl->VSSetConstantBuffers(Context, 0, 1, &D3D11->MeshTransformUniformBuffer);
     Context->lpVtbl->VSSetShader(Context, D3D11->MeshVertexShader, 0, 0);
     Context->lpVtbl->PSSetShader(Context, D3D11->MeshPixelShader , 0, 0);
 
