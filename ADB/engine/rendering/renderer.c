@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <assert.h>
 #include <math.h>
+#include <string.h>
 
 #include "third_party/stb_image.h"
 
@@ -9,53 +10,8 @@
 #include "renderer.h"          // Implementation File
 
 
-void *
-PushDataInBatchList(memory_arena *Arena, render_batch_list *BatchList)
-{
-    void *Result = NULL;
-
-    render_batch_node *Node = BatchList->Last;
-    if (!Node || (Node->Value.ByteCount + BatchList->BytesPerInstance > Node->Value.ByteCapacity))
-    {
-        Node = PushStruct(Arena, render_batch_node);
-        if (Node)
-        {
-            Node->Next = NULL;
-            Node->Value.ByteCount    = 0;
-            Node->Value.ByteCapacity = KiB(64); // Still an issue!
-            Node->Value.Memory       = PushArray(Arena, uint8_t, Node->Value.ByteCapacity);
-
-            if (!BatchList->First)
-            {
-                BatchList->First = Node;
-                BatchList->Last  = Node;
-            }
-            else if (BatchList->Last)
-            {
-                BatchList->Last->Next = Node;
-                BatchList->Last       = Node;
-            }
-            else
-            {
-                assert(!"INVALID ENGINE STATE");
-            }
-        }
-    }
-
-    BatchList->ByteCount += BatchList->BytesPerInstance;
-    BatchList->BatchCount += 1;
-
-    if (Node)
-    {
-        Result = (void *)(Node->Value.Memory + Node->Value.ByteCount);
-        Node->Value.ByteCount += BatchList->BytesPerInstance;
-    }
-
-    return Result;
-}
-
-render_pass *
-GetRenderPass(memory_arena *Arena, RenderPassType Type, render_pass_list *PassList)
+static render_pass *
+GetRenderPass(memory_arena *Arena, RenderPassType Type, render_command_pass_list *PassList)
 {
     render_pass_node *Result = PassList->Last;
 
@@ -68,10 +24,8 @@ GetRenderPass(memory_arena *Arena, RenderPassType Type, render_pass_list *PassLi
         }
 
         Result->Value.Type = Type;
-        Result->Value.Params.UI.First = NULL;
-        Result->Value.Params.UI.Last = NULL;
-        Result->Value.Params.UI.Count = 0;
-        Result->Next = NULL;
+        Result->Next       = NULL;
+        memset(&Result->Value.Params, 0, sizeof(Result->Value.Params));
 
         if (!PassList->First)
         {
@@ -86,7 +40,131 @@ GetRenderPass(memory_arena *Arena, RenderPassType Type, render_pass_list *PassLi
         PassList->Last = Result;
     }
 
+    assert(Result);
+
     return &Result->Value;
+}
+
+
+static bool
+MeshGroupParamsAreMergeable(mesh_group_params *A, mesh_group_params *B)
+{
+    bool Result = memcmp(A, B, sizeof(mesh_group_params)) == 0;
+    return Result;
+}
+
+
+static bool
+MeshBatchParamsAreMergeable(mesh_batch_params *A, mesh_batch_params *B)
+{
+    bool Result = memcmp(A, B, sizeof(mesh_batch_params)) == 0;
+    return Result;
+}
+
+
+render_command_batch_list *
+PushMeshGroupParams(mesh_group_params *Params, memory_arena *Arena, render_command_pass_list *PassList)
+{
+    render_command_batch_list *Result = 0;
+
+    render_pass *Pass = GetRenderPass(Arena, RenderPass_Mesh, PassList);
+    if(Pass)
+    {
+        render_pass_params_mesh *PassParams = &Pass->Params.Mesh;
+
+        mesh_group_node *Group = PassParams->Last;
+        if (!Group || !MeshGroupParamsAreMergeable(Params, &Group->Params))
+        {
+            Group = PushStruct(Arena, mesh_group_node);
+            if (Group)
+            {
+                Group->Next   = 0;
+                Group->Params = *Params;
+                Group->BatchList.BatchCount = 0;
+                Group->BatchList.First      = 0;
+                Group->BatchList.Last       = 0;
+            }
+
+            if (!PassParams->First)
+            {
+                PassParams->First = Group;
+                PassParams->Last  = Group;
+            }
+            else if (PassParams->Last)
+            {
+                PassParams->Last->Next = Group;
+                PassParams->Last       = Group;
+            }
+            else
+            {
+                assert(!"INVALID ENGINE STATE");
+            }
+        }
+    }
+
+    if (Pass)
+    {
+        Result = &Pass->Params.Mesh.Last->BatchList;
+    }
+
+    return Result;
+}
+
+
+render_command_batch *
+PushMeshBatchParams(mesh_batch_params *Params, memory_arena *Arena, render_command_batch_list *BatchList)
+{
+    render_command_batch *Result = 0;
+
+    render_command_batch_node *BatchNode = BatchList->Last;
+    if (!BatchNode || !MeshBatchParamsAreMergeable(Params, &BatchNode->MeshParams))
+    {
+        BatchNode = PushStruct(Arena, render_command_batch_node);
+        if (BatchNode)
+        {
+            BatchNode->Next       = 0;
+            BatchNode->MeshParams = *Params;
+            BatchNode->Value.Commands = PushArray(Arena, render_command, 50);
+            BatchNode->Value.Count    = 0;
+            BatchNode->Value.Capacity = 50;
+        }
+
+        if (!BatchList->First)
+        {
+            BatchList->First = BatchNode;
+            BatchList->Last  = BatchNode;
+        }
+        else if (BatchList->Last)
+        {
+            BatchList->Last->Next = BatchNode;
+            BatchList->Last       = BatchNode;
+        }
+        else
+        {
+            assert(!"INVALID ENGINE STATE");
+        }
+    }
+
+    if (BatchNode)
+    {
+        Result = &BatchNode->Value;
+    }
+
+    return Result;
+}
+
+
+render_command *
+PushRenderCommand(render_command_batch *Batch)
+{
+    render_command *Result = 0;
+
+    if (Batch->Count < Batch->Capacity)
+    {
+        Result = Batch->Commands + Batch->Count++;
+    }
+
+    return Result;
 }
 
 
@@ -101,12 +179,6 @@ GetRenderPass(memory_arena *Arena, RenderPassType Type, render_pass_list *PassLi
 #define INVALID_LINK_SENTINEL   0xFFFFFFFF
 #define INVALID_RESOURCE_ENTRY  0xFFFFFFFF
 #define INVALID_RESOURCE_HANDLE 0xFFFFFFFF
-
-
-typedef struct
-{
-    uint64_t Value;
-} resource_uuid;
 
 
 typedef struct
@@ -127,14 +199,6 @@ typedef struct resource_reference_table
     resource_reference_entry Entries[MAX_RENDERER_RESOURCE];
     uint32_t                 FirstFreeEntry;
 } resource_reference_table;
-
-
-typedef struct
-{
-    uint32_t        Id;
-    resource_handle Handle;
-} resource_reference_state;
-
 
 
 typedef struct renderer_resource
@@ -166,7 +230,7 @@ typedef struct renderer_resource_manager
 
 
 
-static resource_uuid
+resource_uuid
 MakeResourceUUID(byte_string PathToResource)
 {
     resource_uuid Result = {.Value = HashByteString(PathToResource)};
@@ -224,7 +288,7 @@ PopFreeEntry(resource_reference_table *Table)
 }
 
 
-static resource_reference_state
+resource_reference_state
 FindResourceByUUID(resource_uuid UUID, resource_reference_table *Table)
 {
     resource_reference_entry *Result = 0;
@@ -355,7 +419,7 @@ IsValidResourceHandle(resource_handle Handle)
 }
 
 
-static resource_handle
+resource_handle
 BindResourceHandle(resource_handle Handle, renderer_resource_manager *ResourceManager)
 {
     if (IsValidResourceHandle(Handle))
@@ -370,7 +434,7 @@ BindResourceHandle(resource_handle Handle, renderer_resource_manager *ResourceMa
 }
 
 
-static resource_handle
+resource_handle
 UnbindResourceHandle(resource_handle Handle, renderer_resource_manager *ResourceManager)
 {
     if (IsValidResourceHandle(Handle))
@@ -554,7 +618,7 @@ LoadAssetFileData(asset_file_data AssetFile, memory_arena *Arena, renderer *Rend
             renderer_static_mesh *StaticMesh = AccessUnderlyingResource(MeshHandle, Renderer->Resources);
             assert(StaticMesh);
 
-            byte_string VertexBufferNameParts[2] = { MeshResourceName, ByteStringLiteral("geometry") };
+            byte_string VertexBufferNameParts[2] = {MeshResourceName, ByteStringLiteral("geometry")};
             byte_string VertexBufferResourceName = ConcatenateStrings(VertexBufferNameParts, 2, ByteStringLiteral("::"), Arena);
 
             resource_uuid   VertexBufferUUID   = MakeResourceUUID(VertexBufferResourceName);
@@ -596,43 +660,6 @@ LoadAssetFileData(asset_file_data AssetFile, memory_arena *Arena, renderer *Rend
             assert(!"How do we handle such a case?");
         }
     }
-}
-
-
-// This just works for any type now...
-
-static_mesh_list
-RendererGetAllStaticMeshes(engine_memory *EngineMemory, renderer *Renderer)
-{
-    static_mesh_list Result = {0};
-
-    if (EngineMemory && Renderer)
-    {
-        renderer_resource_manager *ResourceManager = Renderer->Resources;
-
-        uint32_t Count = ResourceManager->CountByType[RendererResource_StaticMesh];
-        uint32_t First = ResourceManager->FirstByType[RendererResource_StaticMesh];
-        
-        renderer_static_mesh **List = PushArray(EngineMemory->FrameMemory, renderer_static_mesh *, Count);
-        if (List)
-        {
-            uint32_t Added = 0;
-            while (First != INVALID_LINK_SENTINEL)
-            {
-                renderer_resource *Resource = &ResourceManager->Resources[First];
-        
-                List[Added++] = &Resource->StaticMesh;
-                First         =  Resource->NextSameType;
-            }
-
-            Result.Data  = List;
-            Result.Count = Count;
-        
-            assert(Added == Count);
-        }
-    }
-
-    return Result;
 }
 
 

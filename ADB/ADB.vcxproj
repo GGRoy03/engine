@@ -134,6 +134,7 @@
     <ClCompile Include="engine\math\vector.c" />
     <ClCompile Include="engine\rendering\assets.c" />
     <ClCompile Include="engine\rendering\d3d11\d3d11.c" />
+    <ClCompile Include="engine\rendering\scene.c" />
     <ClCompile Include="platform\win32.c" />
     <ClCompile Include="engine\rendering\renderer.c" />
     <ClCompile Include="utilities.c" />
@@ -146,6 +147,7 @@
     <ClInclude Include="engine\rendering\assets.h" />
     <ClInclude Include="engine\rendering\d3d11\d3d11.h" />
     <ClInclude Include="engine\rendering\renderer.h" />
+    <ClInclude Include="engine\rendering\scene.h" />
     <ClInclude Include="parsers\parser_obj.h" />
     <ClInclude Include="platform\platform.h" />
     <ClInclude Include="third_party\stb_image.h" />

@@ -1,3 +1,5 @@
+#include <assert.h>
+
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
@@ -122,7 +124,7 @@ D3D11Initialize(HWND HWindow, memory_arena *Arena)
 
     {
         D3D11_BUFFER_DESC Desc = {0};
-        Desc.ByteWidth      = sizeof(mesh_transform_uniform_buffer);
+        Desc.ByteWidth      = sizeof(mesh_group_params);
         Desc.Usage          = D3D11_USAGE_DYNAMIC;
         Desc.BindFlags      = D3D11_BIND_CONSTANT_BUFFER;
         Desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
@@ -277,73 +279,110 @@ RendererDrawFrame(int Width, int Height, engine_memory *EngineMemory, renderer *
     d3d11_renderer      *D3D11   = (d3d11_renderer *)Renderer->Backend;
     ID3D11DeviceContext *Context = D3D11->DeviceContext;
 
+    for (render_pass_node *PassNode = Renderer->PassList.First; PassNode != 0; PassNode = PassNode->Next)
     {
-        mesh_transform_uniform_buffer TransformBuffer =
+        render_pass *Pass = &PassNode->Value;
+
+        switch (Pass->Type)
         {
-            .World      = GetCameraWorldMatrix(&Renderer->Camera),
-            .View       = GetCameraViewMatrix(&Renderer->Camera),
-            .Projection = GetCameraProjectionMatrix(&Renderer->Camera),
-        };
 
-        D3D11_MAPPED_SUBRESOURCE Mapped;
-        Context->lpVtbl->Map(Context, (ID3D11Resource *)D3D11->MeshTransformUniformBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &Mapped);
-        if (Mapped.pData)
+        case RenderPass_Mesh:
         {
-            memcpy(Mapped.pData, &TransformBuffer, sizeof(TransformBuffer));
-            Context->lpVtbl->Unmap(Context, (ID3D11Resource *)D3D11->MeshTransformUniformBuffer, 0);
-        }
-    }
-
-    D3D11_VIEWPORT Viewport = { 0.f, 0.f, Width, Height, 0.f, 1.f };
-    Context->lpVtbl->RSSetState(Context, D3D11->MeshRasterizerState);
-    Context->lpVtbl->RSSetViewports(Context, 1, &Viewport);
-
-    Context->lpVtbl->IASetPrimitiveTopology(Context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    Context->lpVtbl->IASetInputLayout(Context, D3D11->MeshInputLayout);
-
-    Context->lpVtbl->VSSetConstantBuffers(Context, 0, 1, &D3D11->MeshTransformUniformBuffer);
-    Context->lpVtbl->VSSetShader(Context, D3D11->MeshVertexShader, 0, 0);
-    Context->lpVtbl->PSSetShader(Context, D3D11->MeshPixelShader , 0, 0);
-
-    Context->lpVtbl->OMSetRenderTargets(Context, 1, &D3D11->RenderView, 0);
-    // Context->lpVtbl->OMSetBlendState(Context, Renderer->BlendState, 0, 0xFFFFFFFF);
-
-    static_mesh_list MeshList = RendererGetAllStaticMeshes(EngineMemory, Renderer);
-
-    for (uint32_t Idx = 0; Idx < MeshList.Count; ++Idx)
-    {
-        renderer_static_mesh *StaticMesh = MeshList.Data[Idx];
-
-        renderer_backend_resource *BD = AccessUnderlyingResource(StaticMesh->VertexBuffer, Renderer->Resources);
-
-        ID3D11Buffer *VertexBuffer = (ID3D11Buffer *)BD->Data;
-        UINT32        Stride       = sizeof(mesh_vertex_data);
-        UINT32        Offset       = 0;
-        Context->lpVtbl->IASetVertexBuffers(Context, 0, 1, &VertexBuffer, &Stride, &Offset);
-
-        for (uint32_t SubmeshIdx = 0; SubmeshIdx < StaticMesh->SubmeshCount; ++SubmeshIdx)
-        {
-            renderer_static_submesh *Submesh = StaticMesh->Submeshes + SubmeshIdx;
-
-            ID3D11ShaderResourceView *MaterialView[MaterialMap_Count] = {0};
-            {
-                renderer_material *Material = AccessUnderlyingResource(Submesh->Material, Renderer->Resources);
-
-                // TODO: Fix these queries
-
-                renderer_backend_resource *BD1 = AccessUnderlyingResource(Material->Maps[MaterialMap_Color], Renderer->Resources);
-
-                MaterialView[MaterialMap_Color] = BD1->Data;
-                // MaterialView[MaterialMap_Normal]    = Material->Maps[MaterialMap_Normal]    ? Material->Maps[MaterialMap_Normal]->Backend    : 0;
-                // MaterialView[MaterialMap_Roughness] = Material->Maps[MaterialMap_Roughness] ? Material->Maps[MaterialMap_Roughness]->Backend : 0;
-            }
-
+            D3D11_VIEWPORT Viewport = { 0.f, 0.f, Width, Height, 0.f, 1.f };
+            Context->lpVtbl->RSSetState(Context, D3D11->MeshRasterizerState);
+            Context->lpVtbl->RSSetViewports(Context, 1, &Viewport);
+            Context->lpVtbl->IASetPrimitiveTopology(Context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            Context->lpVtbl->IASetInputLayout(Context, D3D11->MeshInputLayout);
+            Context->lpVtbl->VSSetShader(Context, D3D11->MeshVertexShader, 0, 0);
+            Context->lpVtbl->PSSetShader(Context, D3D11->MeshPixelShader, 0, 0);
+            Context->lpVtbl->OMSetRenderTargets(Context, 1, &D3D11->RenderView, 0);
             Context->lpVtbl->PSSetSamplers(Context, 0, 1, &D3D11->MeshSamplerState);
-            Context->lpVtbl->PSSetShaderResources(Context, 0, 1, MaterialView);
 
-            Context->lpVtbl->Draw(Context, Submesh->VertexCount, Submesh->VertexStart);
+            render_pass_params_mesh *PassParams = &Pass->Params.Mesh;
+
+            for (mesh_group_node *GroupNode = PassParams->First; GroupNode != 0; GroupNode = GroupNode->Next)
+            {
+                mesh_group_params *GroupParams = &GroupNode->Params;
+
+                {
+                    D3D11_MAPPED_SUBRESOURCE Mapped;
+                    Context->lpVtbl->Map(Context, (ID3D11Resource *)D3D11->MeshTransformUniformBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &Mapped);
+                    if (Mapped.pData)
+                    {
+                        memcpy(Mapped.pData, GroupParams, sizeof(mesh_group_params));
+                        Context->lpVtbl->Unmap(Context, (ID3D11Resource *)D3D11->MeshTransformUniformBuffer, 0);
+                    }
+                }
+
+                Context->lpVtbl->VSSetConstantBuffers(Context, 0, 1, &D3D11->MeshTransformUniformBuffer);
+
+                // Iterate batches (tier 2: material params)
+                for (render_command_batch_node *BatchNode = GroupNode->BatchList.First; BatchNode != 0; BatchNode = BatchNode->Next)
+                {
+                    render_command_batch *Batch       = &BatchNode->Value;
+                    mesh_batch_params    *BatchParams = &BatchNode->MeshParams;
+
+                    {
+                        renderer_material *Material = AccessUnderlyingResource(BatchParams->Material, Renderer->Resources);
+                        assert(Material);
+
+                        renderer_backend_resource *ColorBD   = AccessUnderlyingResource(Material->Maps[MaterialMap_Color], Renderer->Resources);
+                        ID3D11ShaderResourceView  *ColorView = ColorBD ? (ID3D11ShaderResourceView *)ColorBD->Data : 0;
+
+                        Context->lpVtbl->PSSetShaderResources(Context, 0, 1, &ColorView);
+                    }
+
+                    // Execute all commands in this batch
+                    for (uint32_t CmdIdx = 0; CmdIdx < Batch->Count; ++CmdIdx)
+                    {
+                        render_command *Command = &Batch->Commands[CmdIdx];
+
+                        switch (Command->Type)
+                        {
+
+                        case RenderCommand_StaticGeometry:
+                        {
+                            renderer_static_mesh *StaticMesh = AccessUnderlyingResource(Command->StaticGeometry.MeshHandle, Renderer->Resources);
+                            assert(StaticMesh);
+
+                            // Bind vertex buffer
+                            {
+                                renderer_backend_resource *VertexBufferBD = AccessUnderlyingResource(StaticMesh->VertexBuffer, Renderer->Resources);
+                                ID3D11Buffer              *VertexBuffer   = (ID3D11Buffer *)VertexBufferBD->Data;
+
+                                UINT32 Stride = sizeof(mesh_vertex_data);
+                                UINT32 Offset = 0;
+                                Context->lpVtbl->IASetVertexBuffers(Context, 0, 1, &VertexBuffer, &Stride, &Offset);
+                            }
+
+                            // Draw each submesh (they all share the material from the batch)
+                            for (uint32_t SubmeshIdx = 0; SubmeshIdx < StaticMesh->SubmeshCount; ++SubmeshIdx)
+                            {
+                                renderer_static_submesh *Submesh = &StaticMesh->Submeshes[SubmeshIdx];
+                                Context->lpVtbl->Draw(Context, Submesh->VertexCount, Submesh->VertexStart);
+                            }
+                        } break;
+
+                        default:
+                        {
+                            assert(!"INVALID ENGINE STATE");
+                        } break;
+
+                        }
+                    }
+                }
+            }
+        } break;
+
+        default:
+        {
+            assert(!"INVALID ENGINE STATE");
+        } break;
         }
     }
+
+    Renderer->PassList.First = 0;
+    Renderer->PassList.Last  = 0;
 }
 
 void

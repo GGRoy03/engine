@@ -7,98 +7,7 @@
 typedef struct renderer renderer;
 
 
-typedef enum
-{
-    RenderPass_None = 0,
-    RenderPass_UI   = 1,
-    RenderPass_Mesh = 2,
-} RenderPassType;
 
-
-// Data Batches
-
-
-typedef struct
-{
-    uint8_t *Memory;
-    uint64_t  ByteCount;
-    uint64_t  ByteCapacity;
-} render_batch;
-
-
-typedef struct render_batch_node render_batch_node;
-struct render_batch_node
-{
-    render_batch_node *Next;
-    render_batch       Value;
-};
-
-
-typedef struct
-{
-    render_batch_node *First;
-    render_batch_node *Last;
-    uint64_t           BatchCount;
-    uint64_t           ByteCount;
-    uint64_t           BytesPerInstance;
-} render_batch_list;
-
-
-// Maps to constant buffers.
-
-typedef struct
-{
-    void *Data;
-} ui_group_params;
-
-
-typedef struct ui_group_node ui_group_node;
-struct ui_group_node
-{
-    ui_group_node    *Next;
-    render_batch_list BatchList;
-    ui_group_params   Params;
-};
-
-
-// Render Passes
-
-
-typedef struct
-{
-    ui_group_node *First;
-    ui_group_node *Last;
-    uint32_t       Count;
-} render_pass_params_ui;
-
-
-typedef struct
-{
-    RenderPassType Type;
-    union
-    {
-        render_pass_params_ui UI;
-    } Params;
-} render_pass;
-
-
-typedef struct render_pass_node render_pass_node;
-struct render_pass_node
-{
-    render_pass_node *Next;
-    render_pass       Value;
-};
-
-
-typedef struct
-{
-    render_pass_node *First;
-    render_pass_node *Last;
-} render_pass_list;
-
-
-render_pass * GetRenderPass        (memory_arena *Arena, RenderPassType Type, render_pass_list *PassList);
-void *        PushDataInBatchList  (memory_arena *Arena, render_batch_list *BatchList);
 
 // ==============================================
 // <Resources> 
@@ -169,23 +78,25 @@ typedef struct
 
 typedef struct
 {
-    mat4x4 World;
-    mat4x4 View;
-    mat4x4 Projection;
-} mesh_transform_uniform_buffer;
+    uint64_t Value;
+} resource_uuid;
 
 
 typedef struct
 {
-    renderer_static_mesh **Data;
-    uint32_t               Count;
-} static_mesh_list;
+    uint32_t        Id;
+    resource_handle Handle;
+} resource_reference_state;
 
 
-void             LoadAssetFileData           (asset_file_data AssetFile, memory_arena *Arena, renderer *Renderer);
-static_mesh_list RendererGetAllStaticMeshes  (engine_memory *EngineMemory, renderer *Renderer);
+void                        LoadAssetFileData             (asset_file_data AssetFile, memory_arena *Arena, renderer *Renderer);
 
-// New API
+resource_uuid               MakeResourceUUID              (byte_string PathToResource);
+resource_reference_state    FindResourceByUUID            (resource_uuid UUID, resource_reference_table *Table);
+
+resource_handle             BindResourceHandle            (resource_handle Handle, renderer_resource_manager *ResourceManager);
+resource_handle             UnbindResourceHandle          (resource_handle Handle, renderer_resource_manager *ResourceManager);
+
 
 renderer_resource_manager * CreateResourceManager         (memory_arena *Arena);
 resource_reference_table  * CreateResourceReferenceTable  (memory_arena *Arena);
@@ -205,6 +116,7 @@ void * RendererCreateVertexBuffer  (void *Data, uint64_t Size, renderer *Rendere
 // <Camera>
 // ==============================================
 
+// Probably move this to scene.
 
 typedef struct
 {
@@ -226,19 +138,135 @@ mat4x4 GetCameraProjectionMatrix  (camera *Camera);
 
 
 // ==============================================
-// <Scenes>
+// <Drawing>
 // ==============================================
+
+
+#define MAX_RENDER_COMMAND_COUNT 64
+
+typedef enum
+{
+    RenderPass_None = 0,
+    RenderPass_Mesh = 1,
+} RenderPassType;
+
+
+typedef enum
+{
+    RenderCommand_None = 0,
+
+    RenderCommand_StaticGeometry = 1,
+} RenderCommand_Type;
 
 
 typedef struct
 {
-    camera Camera;
-} game_scene;
+    resource_handle MeshHandle;
+} static_geometry_command;
 
 
-// ==============================================
-// <Drawing>
-// ==============================================
+typedef struct
+{
+    RenderCommand_Type Type;
+
+    union
+    {
+        static_geometry_command StaticGeometry;
+    };
+} render_command;
+
+
+typedef struct
+{
+    render_command *Commands;
+    uint32_t        Count;
+    uint32_t        Capacity;
+} render_command_batch;
+
+
+typedef struct
+{
+    resource_handle Material;
+} mesh_batch_params;
+
+
+typedef struct render_command_batch_node render_command_batch_node;
+struct render_command_batch_node
+{
+    render_command_batch_node *Next;
+    render_command_batch       Value;
+
+    union
+    {
+        mesh_batch_params MeshParams;
+    };
+};
+
+
+typedef struct
+{
+    render_command_batch_node *First;
+    render_command_batch_node *Last;
+    uint64_t                   BatchCount;
+} render_command_batch_list;
+
+
+typedef struct
+{
+    mat4x4 WorldMatrix;
+    mat4x4 ViewMatrix;
+    mat4x4 ProjectionMatrix;
+} mesh_group_params;
+
+
+typedef struct mesh_group_node mesh_group_node;
+struct mesh_group_node
+{
+    mesh_group_node          *Next;
+    render_command_batch_list BatchList;
+    mesh_group_params         Params;
+};
+
+
+typedef struct
+{
+    mesh_group_node *First;
+    mesh_group_node *Last;
+    uint32_t         Count;
+} render_pass_params_mesh;
+
+
+typedef struct
+{
+    RenderPassType Type;
+    union
+    {
+        render_pass_params_mesh Mesh;
+    } Params;
+} render_pass;
+
+
+typedef struct render_pass_node render_pass_node;
+struct render_pass_node
+{
+    render_pass_node *Next;
+    render_pass       Value;
+};
+
+
+typedef struct
+{
+    render_pass_node *First;
+    render_pass_node *Last;
+} render_command_pass_list;
+
+
+// Experimental API
+
+render_command            * PushRenderCommand    (render_command_batch *Batch);
+
+render_command_batch_list * PushMeshGroupParams  (mesh_group_params *Params, memory_arena *Arena, render_command_pass_list *PassList);
+render_command_batch      * PushMeshBatchParams  (mesh_batch_params *Params, memory_arena *Arena, render_command_batch_list *BatchList);
 
 
 typedef struct
@@ -252,17 +280,14 @@ void RendererDrawFrame   (int Width, int Height, engine_memory *EngineMemory, re
 void RendererFlushFrame  (renderer *Renderer);
 
 // ==============================================
-// <...> 
+// <> 
 // ==============================================
-
 
 
 typedef struct renderer
 {
     void                      *Backend;
-    render_pass_list           PassList;
-    memory_arena              *FrameArena;
+    render_command_pass_list   PassList;
     renderer_resource_manager *Resources;
     resource_reference_table  *ReferenceTable;
-    camera                     Camera;
 } renderer;
