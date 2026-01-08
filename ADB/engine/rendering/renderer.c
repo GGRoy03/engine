@@ -397,6 +397,24 @@ UnbindResourceHandle(resource_handle Handle, renderer_resource_manager *Resource
 }
 
 
+static resource_handle
+FindOrCreateResource(resource_uuid UUID, RendererResource_Type Type, renderer_resource_manager *Resources, resource_reference_table *RefTable)
+{
+    resource_reference_state State = FindResourceByUUID(UUID, RefTable);
+
+    if (!IsValidResourceHandle(State.Handle))
+    {
+        resource_handle Handle = CreateResourceHandle(UUID, Type, Resources);
+
+        UpdateResourceReferenceTable(State.Id, Handle, RefTable);
+
+        return Handle;
+    }
+
+    return State.Handle;
+}
+
+
 void *
 AccessUnderlyingResource(resource_handle Handle, renderer_resource_manager *ResourceManager)
 {
@@ -484,47 +502,35 @@ LoadAssetFileData(asset_file_data AssetFile, memory_arena *Arena, renderer *Rend
 {
     for (uint32_t MaterialIdx = 0; MaterialIdx < AssetFile.MaterialCount; ++MaterialIdx)
     {
-        resource_uuid            MaterialUUID  = MakeResourceUUID(AssetFile.Materials[MaterialIdx].Path);
-        resource_reference_state MaterialState = FindResourceByUUID(MaterialUUID, Renderer->ReferenceTable);
+        resource_uuid   MaterialUUID   = MakeResourceUUID(AssetFile.Materials[MaterialIdx].Path);
+        resource_handle MaterialHandle = FindOrCreateResource(MaterialUUID, RendererResource_Material, Renderer->Resources, Renderer->ReferenceTable);
 
-        if (!IsValidResourceHandle(MaterialState.Handle))
+        if (IsValidResourceHandle(MaterialHandle))
         {
-            resource_handle    MaterialHandle = CreateResourceHandle(MaterialUUID, RendererResource_Material, Renderer->Resources);
-            renderer_material *Material       = AccessUnderlyingResource(MaterialHandle, Renderer->Resources);
+            renderer_material *Material = AccessUnderlyingResource(MaterialHandle, Renderer->Resources);
+            assert(Material);
 
-            if (Material)
+            for (MaterialMap_Type MapType = MaterialMap_Color; MapType < MaterialMap_Count; ++MapType)
             {
-                for (MaterialMap_Type MapType = MaterialMap_Color; MapType < MaterialMap_Count; ++MapType)
+                resource_uuid   TextureUUID   = MakeResourceUUID(AssetFile.Materials[MaterialIdx].Textures[MapType].Path);
+                resource_handle TextureHandle = FindOrCreateResource(TextureUUID, RendererResource_TextureView, Renderer->Resources, Renderer->ReferenceTable);
+
+                if (IsValidResourceHandle(TextureHandle))
                 {
-                    resource_uuid            TextureUUID  = MakeResourceUUID(AssetFile.Materials[MaterialIdx].Textures[MapType].Path);
-                    resource_reference_state TextureState = FindResourceByUUID(TextureUUID, Renderer->ReferenceTable);
+                    renderer_backend_resource *BackendResource = AccessUnderlyingResource(TextureHandle, Renderer->Resources);
+                    assert(BackendResource);
 
-                    if (!IsValidResourceHandle(TextureState.Handle))
-                    {
-                        resource_handle            TextureHandle   = CreateResourceHandle(TextureUUID, RendererResource_TextureView, Renderer->Resources);
-                        renderer_backend_resource *BackendResource = AccessUnderlyingResource(TextureHandle, Renderer->Resources);
+                    BackendResource->Data = RendererCreateTexture(AssetFile.Materials[MaterialIdx].Textures[MapType], Renderer);
 
-                        if (BackendResource)
-                        {
-                            BackendResource->Data = RendererCreateTexture(AssetFile.Materials[MaterialIdx].Textures[MapType], Renderer);
-                        }
-
-                        Material->Maps[MapType] = BindResourceHandle(TextureHandle, Renderer->Resources);
-                    }
-                    else
-                    {
-                        assert(!"How do we handle such a case?");
-                    }
-
-                    stbi_image_free(AssetFile.Materials[MaterialIdx].Textures[MapType].Data);
+                    Material->Maps[MapType] = BindResourceHandle(TextureHandle, Renderer->Resources);
                 }
-            }
-            else
-            {
-                assert(!"How do we handle such a case?");
-            }
+                else
+                {
+                    assert(!"How do we handle such a case?");
+                }
 
-            UpdateResourceReferenceTable(MaterialState.Id, MaterialHandle, Renderer->ReferenceTable);
+                stbi_image_free(AssetFile.Materials[MaterialIdx].Textures[MapType].Data);
+            }
         }
         else
         {
@@ -536,72 +542,54 @@ LoadAssetFileData(asset_file_data AssetFile, memory_arena *Arena, renderer *Rend
     {
         asset_mesh_data *MeshData = &AssetFile.Meshes[MeshIdx];
 
-        // Since multiple meshes can come from the same file we have to modify their resource names as:
-        // {Path}/{Name}
-        // For example: data/strawberry.obj and a mesh strawberry => data/strawberry:strawberry
+        byte_string PathNoExt        = StripExtensionName(MeshData->Path);
+        byte_string MeshNameParts[2] = {PathNoExt, MeshData->Name};
+        byte_string MeshResourceName = ConcatenateStrings(MeshNameParts, 2, ByteStringLiteral("::"), Arena);
 
-        byte_string PathWithNoExtension  = StripExtensionName(MeshData->Path);
-        uint64_t    MeshResourceNameSize = PathWithNoExtension.Size + MeshData->Name.Size + 2;
-        byte_string MeshResourceName     = ByteString(PushArray(Arena, uint8_t, MeshResourceNameSize), 0);
+        resource_uuid   MeshUUID   = MakeResourceUUID(MeshResourceName);
+        resource_handle MeshHandle = FindOrCreateResource(MeshUUID, RendererResource_StaticMesh, Renderer->Resources, Renderer->ReferenceTable);
 
-        for (uint32_t Idx = 0; Idx < PathWithNoExtension.Size; ++Idx)
+        if (IsValidResourceHandle(MeshHandle))
         {
-            MeshResourceName.Data[MeshResourceName.Size++] = PathWithNoExtension.Data[Idx];
-        }
-
-        MeshResourceName.Data[MeshResourceName.Size++] = ':';
-        MeshResourceName.Data[MeshResourceName.Size++] = ':';
-        
-        for (uint32_t Idx = 0; Idx < MeshData->Name.Size; ++Idx)
-        {
-            MeshResourceName.Data[MeshResourceName.Size++] = MeshData->Name.Data[Idx];
-        }
-
-        resource_uuid            MeshUUID  = MakeResourceUUID(MeshResourceName);
-        resource_reference_state MeshState = FindResourceByUUID(MeshUUID, Renderer->ReferenceTable);
-        
-        if (!IsValidResourceHandle(MeshState.Handle))
-        {
-            resource_handle       MeshHandle = CreateResourceHandle(MeshUUID, RendererResource_StaticMesh, Renderer->Resources);
             renderer_static_mesh *StaticMesh = AccessUnderlyingResource(MeshHandle, Renderer->Resources);
-        
-            resource_uuid            VertexBufferUUID  = MakeResourceUUID(ByteStringLiteral("This is a buffer"));
-            resource_reference_state VertexBufferState = FindResourceByUUID(VertexBufferUUID, Renderer->ReferenceTable);
-        
-            if (!IsValidResourceHandle(VertexBufferState.Handle))
+            assert(StaticMesh);
+
+            byte_string VertexBufferNameParts[2] = { MeshResourceName, ByteStringLiteral("geometry") };
+            byte_string VertexBufferResourceName = ConcatenateStrings(VertexBufferNameParts, 2, ByteStringLiteral("::"), Arena);
+
+            resource_uuid   VertexBufferUUID   = MakeResourceUUID(VertexBufferResourceName);
+            resource_handle VertexBufferHandle = FindOrCreateResource(VertexBufferUUID, RendererResource_VertexBuffer, Renderer->Resources, Renderer->ReferenceTable);
+
+            if (IsValidResourceHandle(VertexBufferHandle))
             {
-                resource_handle            VertexBufferHandle = CreateResourceHandle(VertexBufferUUID, RendererResource_VertexBuffer, Renderer->Resources);
-                renderer_backend_resource *VertexBuffer       = AccessUnderlyingResource(VertexBufferHandle, Renderer->Resources);
-                uint64_t                   VertexBufferSize   = AssetFile.VertexCount * sizeof(mesh_vertex_data);
-        
-                if (VertexBuffer)
-                {
-                    VertexBuffer->Data = RendererCreateVertexBuffer(AssetFile.Vertices, VertexBufferSize, Renderer);
-                }
-        
+                renderer_backend_resource *VertexBuffer     = AccessUnderlyingResource(VertexBufferHandle, Renderer->Resources);
+                uint64_t                   VertexBufferSize = AssetFile.VertexCount * sizeof(mesh_vertex_data);
+
+                assert(VertexBuffer);
+                assert(VertexBufferSize);
+
+                assert(VertexBuffer->Data == 0);
+                VertexBuffer->Data = RendererCreateVertexBuffer(AssetFile.Vertices, VertexBufferSize, Renderer);
+
                 StaticMesh->VertexBuffer     = BindResourceHandle(VertexBufferHandle, Renderer->Resources);
                 StaticMesh->VertexBufferSize = VertexBufferSize;
-        
-                UpdateResourceReferenceTable(VertexBufferState.Id, VertexBufferHandle, Renderer->ReferenceTable);
             }
-        
+
             assert(MeshData->SubmeshCount < MAX_SUBMESH_COUNT);
-        
+
             StaticMesh->SubmeshCount = MeshData->SubmeshCount;
-        
+
             for (uint32_t SubmeshIdx = 0; SubmeshIdx < MeshData->SubmeshCount; ++SubmeshIdx)
             {
                 asset_submesh_data *SubmeshData = &MeshData->Submeshes[SubmeshIdx];
-        
+
                 resource_uuid            MaterialUUID  = MakeResourceUUID(SubmeshData->MaterialPath);
                 resource_reference_state MaterialState = FindResourceByUUID(MaterialUUID, Renderer->ReferenceTable);
-        
+
                 StaticMesh->Submeshes[SubmeshIdx].Material    = BindResourceHandle(MaterialState.Handle, Renderer->Resources);
                 StaticMesh->Submeshes[SubmeshIdx].VertexCount = SubmeshData->VertexCount;
                 StaticMesh->Submeshes[SubmeshIdx].VertexStart = SubmeshData->VertexOffset;
             }
-        
-            UpdateResourceReferenceTable(MeshState.Id, MeshHandle, Renderer->ReferenceTable);
         }
         else
         {

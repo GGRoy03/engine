@@ -88,6 +88,7 @@ byte_string ByteStringCopy      (byte_string Input, memory_arena *Arena);
                                 
 byte_string ReplaceFileName     (byte_string Path, byte_string Name, memory_arena *Arena);
 byte_string StripExtensionName  (byte_string Path);
+byte_string ConcatenateStrings  (byte_string *Strings, uint32_t Count, byte_string Separator, memory_arena *Arena);
                                 
 uint64_t    HashByteString      (byte_string String);
 

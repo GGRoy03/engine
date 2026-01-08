@@ -286,6 +286,44 @@ StripExtensionName(byte_string Path)
 }
 
 
+byte_string
+ConcatenateStrings(byte_string *Strings, uint32_t Count, byte_string Separator, memory_arena *Arena)
+{
+    uint64_t TotalSize = 0;
+
+    for (uint32_t Idx = 0; Idx < Count; ++Idx)
+    {
+        TotalSize += Strings[Idx].Size;
+    }
+
+    if (IsValidByteString(Separator))
+    {
+        TotalSize += (Count - 1) * Separator.Size;
+    }
+
+    byte_string Result   = ByteString(PushArray(Arena, uint8_t, TotalSize), TotalSize);
+    uint64_t    WriteIdx = 0;
+
+    for (uint32_t StringIdx = 0; StringIdx < Count; ++StringIdx)
+    {
+        for (uint32_t CharIdx = 0; CharIdx < Strings[StringIdx].Size; ++CharIdx)
+        {
+            Result.Data[WriteIdx++] = Strings[StringIdx].Data[CharIdx];
+        }
+
+        if (StringIdx < Count - 1)
+        {
+            for (uint32_t CharIdx = 0; CharIdx < Separator.Size; ++CharIdx)
+            {
+                Result.Data[WriteIdx++] = Separator.Data[CharIdx];
+            }
+        }
+    }
+
+    return Result;
+}
+
+
 uint64_t
 HashByteString(byte_string String)
 {
