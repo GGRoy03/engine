@@ -4,9 +4,9 @@
 #include "engine/math/matrix.h"
 #include <engine/math/vector.h>
 
+#include "third_party/gui/gui.h"
+
 typedef struct renderer renderer;
-
-
 
 
 // ==============================================
@@ -27,14 +27,14 @@ typedef enum
 
     // Base
 
-    RendererResource_Texture2D = 1,
-    RendererResource_TextureView = 2,
+    RendererResource_Texture2D    = 1,
+    RendererResource_TextureView  = 2,
     RendererResource_VertexBuffer = 3,
 
     // Composite
 
-    RendererResource_Material = 4,
-    RendererResource_StaticMesh = 5,
+    RendererResource_Material     = 4,
+    RendererResource_StaticMesh   = 5,
 
     RendererResource_Count = 6,
 } RendererResource_Type;
@@ -138,23 +138,38 @@ mat4x4 GetCameraProjectionMatrix  (camera *Camera);
 
 
 // ==============================================
+// <Lighting> 
+// ==============================================
+
+
+typedef struct
+{
+    vec3   Position;
+    float  Intensity;
+    vec3   Color;
+    float _Pad0;
+} light_source;
+
+
+// ==============================================
 // <Drawing>
 // ==============================================
 
 
-#define MAX_RENDER_COMMAND_COUNT 64
+#define MAX_LIGHT_COUNT  8
+
 
 typedef enum
 {
     RenderPass_None = 0,
     RenderPass_Mesh = 1,
+    RenderPass_UI   = 2,
 } RenderPassType;
 
 
 typedef enum
 {
-    RenderCommand_None = 0,
-
+    RenderCommand_None           = 0,
     RenderCommand_StaticGeometry = 1,
 } RenderCommand_Type;
 
@@ -178,10 +193,26 @@ typedef struct
 
 typedef struct
 {
-    render_command *Commands;
-    uint32_t        Count;
-    uint32_t        Capacity;
-} render_command_batch;
+    gui_bounding_box  Bounds;
+    gui_bounding_box  TextureSource;
+    gui_color         ColorTL;
+    gui_color         ColorBL;
+    gui_color         ColorTR;
+    gui_color         ColorBR;
+    gui_corner_radius CornerRadius;
+    float             BorderWidth;
+    float             Softness;
+    float             SampleTexture;
+    float            _Padding0;
+} gui_rect;
+
+
+typedef struct
+{
+    uint8_t *Memory;
+    uint64_t ByteCount;
+    uint64_t ByteCapacity;
+} render_batch;
 
 
 typedef struct
@@ -190,41 +221,53 @@ typedef struct
 } mesh_batch_params;
 
 
-typedef struct render_command_batch_node render_command_batch_node;
-struct render_command_batch_node
+typedef struct
 {
-    render_command_batch_node *Next;
-    render_command_batch       Value;
+    void *Data;
+} ui_batch_params;
+
+
+typedef struct render_batch_node render_batch_node;
+struct render_batch_node
+{
+    render_batch_node *Next;
+    render_batch       Value;
 
     union
     {
         mesh_batch_params MeshParams;
+        ui_batch_params   UIParams;
     };
 };
 
 
 typedef struct
 {
-    render_command_batch_node *First;
-    render_command_batch_node *Last;
-    uint64_t                   BatchCount;
-} render_command_batch_list;
+    render_batch_node *First;
+    render_batch_node *Last;
+    uint64_t           BatchCount;
+    uint64_t           BytesPerInstance;
+} render_batch_list;
 
 
 typedef struct
 {
-    mat4x4 WorldMatrix;
-    mat4x4 ViewMatrix;
-    mat4x4 ProjectionMatrix;
+    mat4x4       WorldMatrix;
+    mat4x4       ViewMatrix;
+    mat4x4       ProjectionMatrix;
+    vec3         CameraPosition;
+
+    light_source Lights[MAX_LIGHT_COUNT];
+    uint32_t     LightCount;
 } mesh_group_params;
 
 
 typedef struct mesh_group_node mesh_group_node;
 struct mesh_group_node
 {
-    mesh_group_node          *Next;
-    render_command_batch_list BatchList;
-    mesh_group_params         Params;
+    mesh_group_node  *Next;
+    render_batch_list BatchList;
+    mesh_group_params Params;
 };
 
 
@@ -238,10 +281,34 @@ typedef struct
 
 typedef struct
 {
+    gui_bounding_box Clip;
+} ui_group_params;
+
+
+typedef struct ui_group_node ui_group_node;
+struct ui_group_node
+{
+    ui_group_node    *Next;
+    render_batch_list BatchList;
+    ui_group_params   Params;
+};
+
+
+typedef struct
+{
+    ui_group_node *First;
+    ui_group_node *Last;
+    uint32_t       Count;
+} render_pass_params_ui;
+
+
+typedef struct
+{
     RenderPassType Type;
     union
     {
         render_pass_params_mesh Mesh;
+        render_pass_params_ui   UI;
     } Params;
 } render_pass;
 
@@ -258,16 +325,25 @@ typedef struct
 {
     render_pass_node *First;
     render_pass_node *Last;
-} render_command_pass_list;
+} render_pass_list;
 
 
-// Experimental API
+#define MESH_INSTANCE_PER_BATCH 10
+#define UI_INSTANCE_PER_BATCH   50
 
-render_command            * PushRenderCommand    (render_command_batch *Batch);
 
-render_command_batch_list * PushMeshGroupParams  (mesh_group_params *Params, memory_arena *Arena, render_command_pass_list *PassList);
-render_command_batch      * PushMeshBatchParams  (mesh_batch_params *Params, memory_arena *Arena, render_command_batch_list *BatchList);
+void              * PushDataInBatchList  (memory_arena *Arena, render_batch_list *BatchList, uint64_t InstancePerBatch);
 
+render_batch_list * PushMeshGroupParams  (mesh_group_params *Params, memory_arena *Arena, render_pass_list *PassList);
+render_batch_list * PushUIGroupParams    (ui_group_params *Params, memory_arena *Arena, render_pass_list *PassList);
+
+void                PushMeshBatchParams  (mesh_batch_params *Params, uint64_t InstancePerBatch, memory_arena *Arena, render_batch_list *BatchList);
+void                PushUIBatchParams    (ui_batch_params *Params, uint64_t InstancePerBatch, memory_arena *Arena, render_batch_list *BatchList);
+
+          
+// ==============================================
+// <> 
+// ==============================================
 
 typedef struct
 {
@@ -275,9 +351,8 @@ typedef struct
 } clear_color;
 
 
-void RendererStartFrame  (clear_color Color, renderer *Renderer);
-void RendererDrawFrame   (int Width, int Height, engine_memory *EngineMemory, renderer *Renderer);
-void RendererFlushFrame  (renderer *Renderer);
+void RendererEnterFrame  (clear_color Color, renderer *Renderer);
+void RendererLeaveFrame   (int Width, int Height, engine_memory *EngineMemory, renderer *Renderer);
 
 // ==============================================
 // <> 
@@ -287,7 +362,7 @@ void RendererFlushFrame  (renderer *Renderer);
 typedef struct renderer
 {
     void                      *Backend;
-    render_command_pass_list   PassList;
+    render_pass_list           PassList;
     renderer_resource_manager *Resources;
     resource_reference_table  *ReferenceTable;
 } renderer;

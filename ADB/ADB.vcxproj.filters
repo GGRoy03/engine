@@ -80,5 +80,8 @@
     <ClCompile Include="engine\rendering\scene.c">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="third_party\gui\gui.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

@@ -107,6 +107,7 @@
       <LanguageStandard>stdcpp20</LanguageStandard>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
       <AdditionalIncludeDirectories>$(SolutionDir)$(SolutionName)\</AdditionalIncludeDirectories>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -137,6 +138,7 @@
     <ClCompile Include="engine\rendering\scene.c" />
     <ClCompile Include="platform\win32.c" />
     <ClCompile Include="engine\rendering\renderer.c" />
+    <ClCompile Include="third_party\gui\gui.c" />
     <ClCompile Include="utilities.c" />
     <ClCompile Include="parsers\parser_obj.c">
       <FileType>CppCode</FileType>

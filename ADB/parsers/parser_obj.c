@@ -99,6 +99,8 @@ ParseMTLFromFile(byte_string Path, engine_memory *EngineMemory)
     {
         while (IsBufferValid(&FileBuffer) && IsBufferInBounds(&FileBuffer))
         {
+            SkipWhitespaces(&FileBuffer);
+
             uint8_t Token = GetNextToken(&FileBuffer);
             
             if (Token == '\0')
@@ -201,10 +203,11 @@ ParseMTLFromFile(byte_string Path, engine_memory *EngineMemory)
                 if (Last && ToLoad)
                 {
                     byte_string NormalMap    = ByteStringLiteral("ap_Bump");
+                    byte_string NormalMap1   = ByteStringLiteral("ap_bump"); // TODO: Add a case insensitive helper...
                     byte_string ColorMap     = ByteStringLiteral("ap_Kd");
                     byte_string RoughnessMap = ByteStringLiteral("ap_Ns");
                     
-                    if (BufferStartsWith(NormalMap, &FileBuffer))
+                    if (BufferStartsWith(NormalMap, &FileBuffer) || BufferStartsWith(NormalMap1, &FileBuffer))
                     {
                         ToLoad->Output = &Last->Value.NormalTexture;
                         ToLoad->Id     = 0;
@@ -256,6 +259,15 @@ ParseMTLFromFile(byte_string Path, engine_memory *EngineMemory)
                         assert(!"Malformed/Bug");
                     }
                 }
+                else if (PeekBuffer(&FileBuffer) == (uint8_t)'i')
+                {
+                    // Ignore: Optical Density (GOTO?)
+
+                    while (IsBufferInBounds(&FileBuffer) && !IsNewLine(PeekBuffer(&FileBuffer)))
+                    {
+                        ++FileBuffer.At;
+                    }
+                }
             } break;
 
             case 'd':
@@ -273,6 +285,7 @@ ParseMTLFromFile(byte_string Path, engine_memory *EngineMemory)
             } break;
 
             // Ignore those lines.
+            case 'T':
             case 'i':
             case '#':
             {
@@ -377,7 +390,7 @@ ParseObjFromFile(byte_string Path, engine_memory *EngineMemory)
     uint32_t           PositionCount     = 0;
     vec3              *NormalBuffer      = PushArray(EngineMemory->FrameMemory, vec3, MAX_ATTRIBUTE_PER_FILE);
     uint32_t           NormalCount       = 0;
-    vec2              *TextureBuffer     = PushArray(EngineMemory->FrameMemory, vec2, MAX_ATTRIBUTE_PER_FILE);
+    vec3              *TextureBuffer     = PushArray(EngineMemory->FrameMemory, vec3, MAX_ATTRIBUTE_PER_FILE);
     uint32_t           TextureCount      = 0;
     obj_vertex        *VertexBuffer      = PushArray(EngineMemory->FrameMemory, obj_vertex, MAX_ATTRIBUTE_PER_FILE);
     uint32_t           VertexCount       = 0;
@@ -414,7 +427,7 @@ ParseObjFromFile(byte_string Path, engine_memory *EngineMemory)
                 } else
                 if (PeekBuffer(&FileBuffer) == (uint8_t)'t' || PeekBuffer(&FileBuffer) == (uint8_t)'T')
                 {
-                    Limit       = 2;
+                    Limit       = 3;
                     FloatBuffer = TextureBuffer[TextureCount++].AsBuffer;
 
                     ++FileBuffer.At;
@@ -520,8 +533,8 @@ ParseObjFromFile(byte_string Path, engine_memory *EngineMemory)
                     for (uint32_t Idx = 1; Idx < VertexCountInLine - 1; ++Idx)
                     {
                         VertexBuffer[VertexCount++] = ParsedVertices[0];
-                        VertexBuffer[VertexCount++] = ParsedVertices[Idx];
                         VertexBuffer[VertexCount++] = ParsedVertices[Idx + 1];
+                        VertexBuffer[VertexCount++] = ParsedVertices[Idx];
 
                         Current->Value.VertexCount += 3;
                     }
@@ -702,10 +715,10 @@ ParseObjFromFile(byte_string Path, engine_memory *EngineMemory)
                             for (uint32_t Idx = 0; Idx < Submesh.VertexCount; ++Idx)
                             {
                                 vec3 Position = PositionBuffer[Vertices[Idx].PositionIndex];
-                                vec2 Texture  = TextureBuffer[Vertices[Idx].TextureIndex];
+                                vec3 Texture  = TextureBuffer[Vertices[Idx].TextureIndex];
                                 vec3 Normal   = NormalBuffer[Vertices[Idx].NormalIndex];
                         
-                                FileData.Vertices[FileData.VertexCount++] = (mesh_vertex_data){.Position = Position, .Texture = Texture, .Normal = Normal};
+                                FileData.Vertices[FileData.VertexCount++] = (mesh_vertex_data){.Position = Position, .Texture = Vec2(Texture.X, Texture.Y), .Normal = Normal};
                             }
 
                             asset_submesh_data *SubmeshData = MeshData->Submeshes + MeshData->SubmeshCount++;

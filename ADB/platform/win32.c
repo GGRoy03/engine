@@ -3,13 +3,17 @@
 #include <stdbool.h>
 #include <assert.h>
 
-#include "utilities.h"
-#include "engine/engine.h"
+
+#include "third_party/gui/gui.h"
+
 
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 
+
+#include "utilities.h"
 #include "platform.h"
+#include "engine/engine.h"
 #include "engine/rendering/renderer.h"
 #include "engine/rendering/d3d11/d3d11.h"
 
@@ -282,9 +286,11 @@ WinMain(HINSTANCE HInstance, HINSTANCE PrevInstance, LPSTR CmdLine, int CmdShow)
         EngineMemory.WorkQueue    = &WorkQueue;
     }
 
+    int ClientWidth0, ClientHeight0;
+    Win32GetClientSize(WindowHandle, &ClientWidth0, &ClientHeight0);
 
     renderer *Renderer = PushStruct(EngineMemory.StateMemory, renderer);
-    Renderer->Backend        = D3D11Initialize(WindowHandle, EngineMemory.StateMemory);
+    Renderer->Backend        = D3D11Initialize(WindowHandle, ClientWidth0, ClientHeight0, EngineMemory.StateMemory);
     Renderer->Resources      = CreateResourceManager(EngineMemory.StateMemory);
     Renderer->ReferenceTable = CreateResourceReferenceTable(EngineMemory.StateMemory);
 
@@ -305,7 +311,8 @@ WinMain(HINSTANCE HInstance, HINSTANCE PrevInstance, LPSTR CmdLine, int CmdShow)
         int ClientWidth, ClientHeight;
         Win32GetClientSize(WindowHandle, &ClientWidth, &ClientHeight);
 
-        UpdateEngine(ClientWidth, ClientHeight, Renderer, &EngineMemory);
+        gui_pointer_event_list EventList = {0};
+        UpdateEngine(ClientWidth, ClientHeight, &EventList, Renderer, &EngineMemory);
 
         // Frame Cleanup
         {
