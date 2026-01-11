@@ -216,7 +216,8 @@ void
 PushUIBatchParams(ui_batch_params *Params, uint64_t InstancePerBatch, memory_arena *Arena, render_batch_list *BatchList)
 {
     render_batch_node *Batch = BatchList->Last;
-    if (memcmp(&Batch->UIParams, Params, sizeof(mesh_batch_params) != 0))
+
+    if (!Batch || memcmp(&Batch->UIParams, Params, sizeof(mesh_batch_params) != 0))
     {
         Batch = AppendNewRenderBatch(Arena, BatchList, InstancePerBatch);
         if (Batch)
