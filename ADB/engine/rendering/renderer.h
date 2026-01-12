@@ -7,15 +7,14 @@
 #include "third_party/gui/gui.h"
 
 typedef struct renderer renderer;
+typedef struct engine_memory engine_memory;
+typedef struct renderer_resource_manager renderer_resource_manager;
+typedef struct resource_reference_table  resource_reference_table;
 
 
 // ==============================================
 // <Resources> 
 // ==============================================
-
-
-typedef struct renderer_resource_manager renderer_resource_manager;
-typedef struct resource_reference_table  resource_reference_table;
 
 
 #define MAX_SUBMESH_COUNT 8
@@ -332,13 +331,15 @@ typedef struct
 #define UI_INSTANCE_PER_BATCH   50
 
 
-void              * PushDataInBatchList  (memory_arena *Arena, render_batch_list *BatchList, uint64_t InstancePerBatch);
+void              * PushDataInBatchList     (memory_arena *Arena, render_batch_list *BatchList, uint64_t InstancePerBatch);
+                                            
+render_batch_list * PushMeshGroupParams     (mesh_group_params *Params, memory_arena *Arena, render_pass_list *PassList);
+render_batch_list * PushUIGroupParams       (ui_group_params *Params, memory_arena *Arena, render_pass_list *PassList);
+                                            
+void                PushMeshBatchParams     (mesh_batch_params *Params, uint64_t InstancePerBatch, memory_arena *Arena, render_batch_list *BatchList);
+void                PushUIBatchParams       (ui_batch_params *Params, uint64_t InstancePerBatch, memory_arena *Arena, render_batch_list *BatchList);
 
-render_batch_list * PushMeshGroupParams  (mesh_group_params *Params, memory_arena *Arena, render_pass_list *PassList);
-render_batch_list * PushUIGroupParams    (ui_group_params *Params, memory_arena *Arena, render_pass_list *PassList);
-
-void                PushMeshBatchParams  (mesh_batch_params *Params, uint64_t InstancePerBatch, memory_arena *Arena, render_batch_list *BatchList);
-void                PushUIBatchParams    (ui_batch_params *Params, uint64_t InstancePerBatch, memory_arena *Arena, render_batch_list *BatchList);
+void                DrawComputedLayoutTree  (gui_layout_tree *Tree, memory_arena *Arena, renderer *Renderer);
 
           
 // ==============================================
@@ -352,7 +353,7 @@ typedef struct
 
 
 void RendererEnterFrame  (clear_color Color, renderer *Renderer);
-void RendererLeaveFrame   (int Width, int Height, engine_memory *EngineMemory, renderer *Renderer);
+void RendererLeaveFrame  (int Width, int Height, engine_memory *EngineMemory, renderer *Renderer);
 
 // ==============================================
 // <> 

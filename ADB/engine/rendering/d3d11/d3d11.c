@@ -54,6 +54,7 @@ typedef struct
     ID3D11InputLayout     *UIInputLayout;
     ID3D11VertexShader    *UIVertexShader;
     ID3D11PixelShader     *UIPixelShader;
+    ID3D11BlendState      *UIBlendState;
     ID3D11SamplerState    *UISamplerState;
     ID3D11RasterizerState *UIRasterizerState;
     ID3D11Buffer          *UIBatchUniformBuffer;
@@ -156,6 +157,7 @@ D3D11Initialize(HWND HWindow, int Width, int Height, memory_arena *Arena)
         }
     }
 
+    // Shaders/Input Layouts
     {
         {
             D3D11_INPUT_ELEMENT_DESC InputLayout[] =
@@ -189,6 +191,7 @@ D3D11Initialize(HWND HWindow, int Width, int Height, memory_arena *Arena)
         }
     }
 
+    // Uniform Buffers
     {
         {
             D3D11_BUFFER_DESC Desc = {0};
@@ -239,6 +242,22 @@ D3D11Initialize(HWND HWindow, int Width, int Height, memory_arena *Arena)
         Result->Device->lpVtbl->CreateBuffer(Result->Device, &Desc, NULL, &Result->UIVertexBuffer);
     }
 
+    // Blending
+    {
+        D3D11_BLEND_DESC BlendDesc = {};
+        BlendDesc.RenderTarget[0].BlendEnable           = TRUE;
+        BlendDesc.RenderTarget[0].SrcBlend              = D3D11_BLEND_SRC_ALPHA;
+        BlendDesc.RenderTarget[0].DestBlend             = D3D11_BLEND_INV_SRC_ALPHA;
+        BlendDesc.RenderTarget[0].BlendOp               = D3D11_BLEND_OP_ADD;
+        BlendDesc.RenderTarget[0].SrcBlendAlpha         = D3D11_BLEND_ONE;
+        BlendDesc.RenderTarget[0].DestBlendAlpha        = D3D11_BLEND_ZERO;
+        BlendDesc.RenderTarget[0].BlendOpAlpha          = D3D11_BLEND_OP_ADD;
+        BlendDesc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+
+        Result->Device->lpVtbl->CreateBlendState(Result->Device, &BlendDesc, &Result->UIBlendState);
+    }
+
+    // Samplers
     {
         {
             D3D11_SAMPLER_DESC Desc = {0};
@@ -267,6 +286,7 @@ D3D11Initialize(HWND HWindow, int Width, int Height, memory_arena *Arena)
         }
     }
 
+    // Depth Buffers/Views
     {
         D3D11_TEXTURE2D_DESC DepthBufferDesc =
         {
@@ -304,6 +324,7 @@ D3D11Initialize(HWND HWindow, int Width, int Height, memory_arena *Arena)
         Result->Device->lpVtbl->CreateDepthStencilState(Result->Device, &DepthStencilDesc, &Result->MeshDepthState);
     }
 
+    // Rasterizer Descs
     {
         {
             D3D11_RASTERIZER_DESC Desc = {0};
@@ -594,6 +615,7 @@ RendererLeaveFrame(int Width, int Height, engine_memory *EngineMemory, renderer 
         case RenderPass_UI:
         {
             Context->lpVtbl->RSSetState(Context, D3D11->UIRasterizerState);
+            Context->lpVtbl->OMSetBlendState(Context, D3D11->UIBlendState, 0, 0xFFFFFFFF);
 
             render_pass_params_ui *PassParams = &Pass->Params.UI;
 
@@ -660,6 +682,7 @@ RendererLeaveFrame(int Width, int Height, engine_memory *EngineMemory, renderer 
                 // Pixel Shader
                 {
                     Context->lpVtbl->PSSetShader(Context, D3D11->UIPixelShader, 0, 0);
+                    Context->lpVtbl->PSSetSamplers(Context, 0, 1, &D3D11->UISamplerState);
                 }
 
                 Context->lpVtbl->DrawInstanced(Context, 4, InstanceCount, 0, 0);

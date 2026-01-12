@@ -5,9 +5,13 @@
 
 #include "third_party/stb_image.h"
 
-#include "utilities.h"         // Arenas
-#include "platform/platform.h" // Engine Memory
-#include "renderer.h"          // Implementation File
+#include "utilities.h"
+#include "renderer.h"
+
+
+// ==============================================
+// <Drawing> 
+// ==============================================
 
 
 static render_pass *
@@ -223,6 +227,74 @@ PushUIBatchParams(ui_batch_params *Params, uint64_t InstancePerBatch, memory_are
         if (Batch)
         {
             Batch->UIParams = *Params;
+        }
+    }
+}
+
+
+void
+DrawComputedLayoutTree(gui_layout_tree *Tree, memory_arena *Arena, renderer *Renderer)
+{
+    gui_memory_footprint Footprint = GuiGetRenderCommandsFootprint(Tree);
+    gui_memory_block     Block =
+    {
+        .SizeInBytes = Footprint.SizeInBytes,
+        .Base        = PushArena(Arena, Footprint.SizeInBytes, Footprint.Alignment)
+    };
+
+    gui_render_command_list CommandList = GuiComputeRenderCommands(Tree, Block);
+
+    ui_group_params    GroupParams = { 0 };
+    render_batch_list *BatchList   = PushUIGroupParams(&GroupParams, Arena, &Renderer->PassList);
+
+    for (uint32_t CommandIdx = 0; CommandIdx < CommandList.Count; ++CommandIdx)
+    {
+        gui_render_command *Command = &CommandList.Commands[CommandIdx];
+
+        switch (Command->Type)
+        {
+
+        case Gui_RenderCommandType_Rectangle:
+        {
+            gui_rect *Rect = PushDataInBatchList(Arena, BatchList, UI_INSTANCE_PER_BATCH);
+            if (Rect)
+            {
+                Rect->Bounds        = Command->Box;
+                Rect->ColorTL       = Command->Rect.Color;
+                Rect->ColorTR       = Command->Rect.Color;
+                Rect->ColorBR       = Command->Rect.Color;
+                Rect->ColorBL       = Command->Rect.Color;
+                Rect->CornerRadius  = Command->Rect.CornerRadius;
+                Rect->BorderWidth   = 0;
+                Rect->Softness      = 2;
+                Rect->SampleTexture = 0;
+                Rect->TextureSource = (gui_bounding_box){ 0 };
+            }
+        } break;
+
+        case Gui_RenderCommandType_Border:
+        {
+            gui_rect *Rect = PushDataInBatchList(Arena, BatchList, UI_INSTANCE_PER_BATCH);
+            if (Rect)
+            {
+                Rect->Bounds        = Command->Box;
+                Rect->ColorTL       = Command->Border.Color;
+                Rect->ColorTR       = Command->Border.Color;
+                Rect->ColorBR       = Command->Border.Color;
+                Rect->ColorBL       = Command->Border.Color;
+                Rect->CornerRadius  = Command->Border.CornerRadius;
+                Rect->BorderWidth   = Command->Border.Width;
+                Rect->Softness      = 2;
+                Rect->SampleTexture = 0;
+                Rect->TextureSource = (gui_bounding_box){ 0 };
+            }
+        } break;
+
+        default:
+        {
+            assert(!"INVALID ENGINE STATE");
+        } break;
+
         }
     }
 }
