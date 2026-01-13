@@ -131,6 +131,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="engine\engine.c" />
+    <ClCompile Include="engine\gui_layer\gui_layer.c" />
     <ClCompile Include="engine\math\matrix.c" />
     <ClCompile Include="engine\math\vector.c" />
     <ClCompile Include="engine\rendering\assets.c" />
@@ -144,6 +145,7 @@
       <FileType>CppCode</FileType>
     </ClCompile>
     <ClInclude Include="engine\engine.h" />
+    <ClInclude Include="engine\gui_layer\gui_layer.h" />
     <ClInclude Include="engine\math\matrix.h" />
     <ClInclude Include="engine\math\vector.h" />
     <ClInclude Include="engine\rendering\assets.h" />

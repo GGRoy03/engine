@@ -339,9 +339,7 @@ render_batch_list * PushUIGroupParams       (ui_group_params *Params, memory_are
 void                PushMeshBatchParams     (mesh_batch_params *Params, uint64_t InstancePerBatch, memory_arena *Arena, render_batch_list *BatchList);
 void                PushUIBatchParams       (ui_batch_params *Params, uint64_t InstancePerBatch, memory_arena *Arena, render_batch_list *BatchList);
 
-void                DrawComputedLayoutTree  (gui_layout_tree *Tree, memory_arena *Arena, renderer *Renderer);
 
-          
 // ==============================================
 // <> 
 // ==============================================

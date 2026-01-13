@@ -7,6 +7,8 @@
 // <Utility Macros>
 // ==============================================
 
+#define Unused(expr) ((void)(expr))
+
 #define KiB(n)  (((uint64_t)(n)) << 10)
 #define MiB(n)  (((uint64_t)(n)) << 20)
 #define GiB(n)  (((uint64_t)(n)) << 30)

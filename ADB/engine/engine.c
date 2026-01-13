@@ -6,6 +6,7 @@
 
 
 #include "engine.h"
+#include "gui_layer/gui_layer.h"
 #include "platform/platform.h"
 #include "rendering/renderer.h"
 
@@ -34,11 +35,21 @@ static gui_layout_properties WindowLayout =
 
 static gui_paint_properties WindowStyle =
 {
-	.Color        = {0.0588f, 0.0588f, 0.0627f, 1.0f},
-	.BorderColor  = { 0.1804f, 0.1961f, 0.2118f, 1.0f},
-	.BorderWidth  = 2.f,
-	.Softness     = 2.f,
-	.CornerRadius = { 4.f, 4.f, 4.f, 4.f },
+	.Default = 
+	{
+		.Color        = {0.0588f, 0.0588f, 0.0627f, 1.0f},
+		.BorderColor  = {0.1804f, 0.1961f, 0.2118f, 1.0f},
+		.BorderWidth  = 2.f,
+		.CornerRadius = {4.f, 4.f, 4.f, 4.f},
+	},
+
+	.Hovered = 
+	{
+		.Color        = {0.0588f, 0.0588f, 0.0627f, 1.0f},
+		.BorderColor  = {0.9176f, 0.3451f, 0.0471f, 1.0f},
+		.BorderWidth  = 2.f,
+		.CornerRadius = {4.f, 4.f, 4.f, 4.f},
+	},
 };
 
 
@@ -53,11 +64,21 @@ static gui_layout_properties PanelLayout =
 
 static gui_paint_properties PanelStyle =
 {
-	.Color        = {0.1020f, 0.1098f, 0.1176f, 1.0f},
-	.BorderColor  = {0.1804f, 0.1961f, 0.2118f, 1.0f},
-	.BorderWidth  = 2.f,
-	.Softness     = 2.f,
-	.CornerRadius = {4.f, 4.f, 4.f, 4.f},
+	.Default =
+	{
+		.Color        = {0.1020f, 0.1098f, 0.1176f, 1.0f},
+		.BorderColor  = {0.1804f, 0.1961f, 0.2118f, 1.0f},
+		.BorderWidth  = 2.f,
+		.CornerRadius = {4.f, 4.f, 4.f, 4.f},
+	},
+
+	.Hovered = 
+	{
+		.Color        = {0.1020f, 0.1098f, 0.1176f, 1.0f},
+		.BorderColor  = {0.9176f, 0.3451f, 0.0471f, 1.0f},
+		.BorderWidth  = 2.f,
+		.CornerRadius = {4.f, 4.f, 4.f, 4.f},
+	},
 };
 
 
@@ -102,15 +123,15 @@ UpdateEngine(int WindowWidth, int WindowHeight, gui_pointer_event_list *PointerE
 	clear_color Color = (clear_color){.R = 0.f, .G = 0.f, .B = 0.f, .A = 1.f};
 	RendererEnterFrame(Color, Renderer);
 
-	GuiBeginFrame(PointerEventList, 0);
+	GuiBeginFrame(PointerEventList, Engine.GuiTree);
 
 	uint32_t WindowFlags = Gui_NodeFlags_ClipContent | Gui_NodeFlags_IsDraggable | Gui_NodeFlags_IsResizable;
-	uint32_t Window      = GuiCreateNode(0, WindowFlags, Engine.GuiTree); GuiUpdateLayout(Window, &WindowLayout, Engine.GuiTree); GuiUpdateStyle(Window, &WindowStyle, Engine.GuiTree);
+	gui_node Window      = GuiCreateNode(0, WindowFlags, Engine.GuiTree); GuiUpdateLayout(Window, &WindowLayout, Engine.GuiTree); GuiUpdateStyle(Window, &WindowStyle, Engine.GuiTree);
 
 	if (GuiEnterParent(Window, Engine.GuiTree, PushStruct(EngineMemory->FrameMemory, gui_parent_node)))
 	{
-		uint32_t Panel0 = GuiCreateNode(1, Gui_NodeFlags_None, Engine.GuiTree); GuiUpdateLayout(Panel0, &PanelLayout, Engine.GuiTree); GuiUpdateStyle(Panel0, &PanelStyle, Engine.GuiTree);
-		uint32_t Panel1 = GuiCreateNode(2, Gui_NodeFlags_None, Engine.GuiTree); GuiUpdateLayout(Panel1, &PanelLayout, Engine.GuiTree); GuiUpdateStyle(Panel1, &PanelStyle, Engine.GuiTree);
+		gui_node Panel0 = GuiCreateNode(1, Gui_NodeFlags_None, Engine.GuiTree); GuiUpdateLayout(Panel0, &PanelLayout, Engine.GuiTree); GuiUpdateStyle(Panel0, &PanelStyle, Engine.GuiTree);
+		gui_node Panel1 = GuiCreateNode(2, Gui_NodeFlags_None, Engine.GuiTree); GuiUpdateLayout(Panel1, &PanelLayout, Engine.GuiTree); GuiUpdateStyle(Panel1, &PanelStyle, Engine.GuiTree);
 
 		GuiLeaveParent(Window, Engine.GuiTree);
 	}

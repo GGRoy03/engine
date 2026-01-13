@@ -48,6 +48,9 @@
     <ClInclude Include="engine\rendering\scene.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="engine\gui_layer\gui_layer.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="engine\rendering\renderer.c">
@@ -81,6 +84,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="third_party\gui\gui.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="engine\gui_layer\gui_layer.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

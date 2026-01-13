@@ -9,6 +9,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
+#include <Windowsx.h>
 
 
 #include "utilities.h"
@@ -36,6 +37,7 @@ bool OSCommit(void *At, size_t Size)
 
 void OSRelease(void *At, size_t Size)
 {
+    Unused(Size);
 	VirtualFree(At, 0, MEM_RELEASE);
 }
 
@@ -173,11 +175,47 @@ ThreadProc(LPVOID lpParameter)
 // ==============================================
 
 
+typedef struct
+{
+    gui_pointer_event_list *PointerEventList;
+    int                     MouseX;
+    int                     MouseY;
+    memory_arena           *WriteArena;
+} win32_state;
+
+
 static LRESULT CALLBACK
 Win32MessageHandler(HWND Hwnd, UINT Message, WPARAM WParam, LPARAM LParam)
 {
+    win32_state *Win32 = GetWindowLongPtrA(Hwnd, GWLP_USERDATA);
+
     switch (Message)
     {
+
+    case WM_MOUSEMOVE:
+    {
+        gui_point Mouse     = (gui_point){(float)GET_X_LPARAM(LParam), (float)GET_Y_LPARAM(LParam)};
+        gui_point LastMouse = (gui_point){(float)Win32->MouseX, (float)Win32->MouseY};
+
+        GuiPushPointerMoveEvent(Mouse, LastMouse, PushStruct(Win32->WriteArena, gui_pointer_event_node), Win32->PointerEventList);
+
+        Win32->MouseX = (int)Mouse.X;
+        Win32->MouseY = (int)Mouse.Y;
+    } break;
+
+    case WM_LBUTTONDOWN:
+    {
+        gui_point Mouse = (gui_point){(float)GET_X_LPARAM(LParam), (float)GET_Y_LPARAM(LParam)};
+
+        GuiPushPointerClickEvent(Gui_PointerButton_Primary, Mouse, PushStruct(Win32->WriteArena, gui_pointer_event_node), Win32->PointerEventList);
+    } break;
+
+    case WM_LBUTTONUP:
+    {
+        gui_point Mouse = (gui_point){(float)GET_X_LPARAM(LParam), (float)GET_Y_LPARAM(LParam)};
+
+        GuiPushPointerReleaseEvent(Gui_PointerButton_Primary, Mouse, PushStruct(Win32->WriteArena, gui_pointer_event_node), Win32->PointerEventList);
+    } break;
 
     case WM_DESTROY:
     {
@@ -224,6 +262,9 @@ Win32CreateWindow(int Width, int Height, HINSTANCE HInstance, int CmdShow)
 int WINAPI
 WinMain(HINSTANCE HInstance, HINSTANCE PrevInstance, LPSTR CmdLine, int CmdShow)
 {
+    Unused(CmdLine);
+    Unused(PrevInstance);
+
     HWND WindowHandle = Win32CreateWindow(1920, 1080, HInstance, CmdShow);
     BOOL Running      = true;
 
@@ -286,11 +327,22 @@ WinMain(HINSTANCE HInstance, HINSTANCE PrevInstance, LPSTR CmdLine, int CmdShow)
         EngineMemory.WorkQueue    = &WorkQueue;
     }
 
-    int ClientWidth0, ClientHeight0;
-    Win32GetClientSize(WindowHandle, &ClientWidth0, &ClientHeight0);
+    win32_state *Win32 = PushStruct(EngineMemory.StateMemory, win32_state);
+    if (Win32)
+    {
+        Win32->MouseX           = 0;
+        Win32->MouseY           = 0;
+        Win32->PointerEventList = PushStruct(EngineMemory.StateMemory, gui_pointer_event_list);
+        Win32->WriteArena       = EngineMemory.FrameMemory;
+
+        SetWindowLongPtrA(WindowHandle, GWLP_USERDATA, (LONG_PTR)Win32);
+    }
+
+    int ClientWidth, ClientHeight;
+    Win32GetClientSize(WindowHandle, &ClientWidth, &ClientHeight);
 
     renderer *Renderer = PushStruct(EngineMemory.StateMemory, renderer);
-    Renderer->Backend        = D3D11Initialize(WindowHandle, ClientWidth0, ClientHeight0, EngineMemory.StateMemory);
+    Renderer->Backend        = D3D11Initialize(WindowHandle, ClientWidth, ClientHeight, EngineMemory.StateMemory);
     Renderer->Resources      = CreateResourceManager(EngineMemory.StateMemory);
     Renderer->ReferenceTable = CreateResourceReferenceTable(EngineMemory.StateMemory);
 
@@ -308,11 +360,9 @@ WinMain(HINSTANCE HInstance, HINSTANCE PrevInstance, LPSTR CmdLine, int CmdShow)
             DispatchMessageA(&Message);
         }
 
-        int ClientWidth, ClientHeight;
         Win32GetClientSize(WindowHandle, &ClientWidth, &ClientHeight);
 
-        gui_pointer_event_list EventList = {0};
-        UpdateEngine(ClientWidth, ClientHeight, &EventList, Renderer, &EngineMemory);
+        UpdateEngine(ClientWidth, ClientHeight, Win32->PointerEventList, Renderer, &EngineMemory);
 
         // Frame Cleanup
         {
