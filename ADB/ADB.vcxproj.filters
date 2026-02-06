@@ -21,9 +21,6 @@
     <ClInclude Include="platform\platform.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="parsers\parser_obj.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="engine\engine.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -36,19 +33,16 @@
     <ClInclude Include="third_party\stb_image.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="engine\rendering\assets.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="engine\math\vector.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="engine\math\matrix.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="engine\rendering\scene.h">
+    <ClInclude Include="engine\gui_layer\gui_layer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="engine\gui_layer\gui_layer.h">
+    <ClInclude Include="engine\rendering\resources.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
@@ -62,16 +56,10 @@
     <ClCompile Include="platform\win32.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="parsers\parser_obj.c">
-      <Filter>Header Files</Filter>
-    </ClCompile>
     <ClCompile Include="engine\engine.c">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="engine\rendering\d3d11\d3d11.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="engine\rendering\assets.c">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="engine\math\vector.c">
@@ -80,13 +68,13 @@
     <ClCompile Include="engine\math\matrix.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="engine\rendering\scene.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="third_party\gui\gui.c">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="engine\gui_layer\gui_layer.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="engine\rendering\resources.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

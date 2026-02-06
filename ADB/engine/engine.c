@@ -1,146 +1,48 @@
-#include <stdbool.h>
 #include <assert.h>
 
-
-#include "third_party/gui/gui.h"
-
+#include "third_party/gui/gui2.h"
 
 #include "engine.h"
-#include "gui_layer/gui_layer.h"
 #include "platform/platform.h"
 #include "rendering/renderer.h"
+#include "rendering/resources.h"
 
 
-typedef struct
-{
-	bool IsInitialized;
-
-	gui_layout_tree    *GuiTree;
-	gui_resource_table *GuiResourceTable;
-} engine_state;
-
-
-static gui_layout_properties WindowLayout =
-{
-	.Size      = {{1000.f, Gui_LayoutSizing_Fixed}, {1000.f, Gui_LayoutSizing_Fixed}},
-	.MinSize   = {{1000.f, Gui_LayoutSizing_Fixed}, {1000.f, Gui_LayoutSizing_Fixed}},
-	.MaxSize   = {{1000.f, Gui_LayoutSizing_Fixed}, {1000.f, Gui_LayoutSizing_Fixed}},
-	.Direction = Gui_LayoutDirection_Horizontal,
-	.XAlign    = Gui_Alignment_Start,
-	.YAlign    = Gui_Alignment_Center,
-	.Padding   = {20.f, 20.f, 20.f, 20.f},
-	.Spacing   = 10.f,
-};
-
-
-static gui_paint_properties WindowStyle =
-{
-	.Default = 
-	{
-		.Color        = {0.0588f, 0.0588f, 0.0627f, 1.0f},
-		.BorderColor  = {0.1804f, 0.1961f, 0.2118f, 1.0f},
-		.BorderWidth  = 2.f,
-		.CornerRadius = {4.f, 4.f, 4.f, 4.f},
-	},
-
-	.Hovered = 
-	{
-		.Color        = {0.0588f, 0.0588f, 0.0627f, 1.0f},
-		.BorderColor  = {0.9176f, 0.3451f, 0.0471f, 1.0f},
-		.BorderWidth  = 2.f,
-		.CornerRadius = {4.f, 4.f, 4.f, 4.f},
-	},
-};
-
-
-static gui_layout_properties PanelLayout =
-{
-	.Size    = {{50.f, Gui_LayoutSizing_Percent}, {100.f, Gui_LayoutSizing_Percent}},
-	.MinSize = {{50.f, Gui_LayoutSizing_Percent}, {100.f, Gui_LayoutSizing_Percent}},
-	.MaxSize = {{50.f, Gui_LayoutSizing_Percent}, {100.f, Gui_LayoutSizing_Percent}},
-	.Padding = {20.f, 20.f, 20.f, 20.f},
-};
-
-
-static gui_paint_properties PanelStyle =
-{
-	.Default =
-	{
-		.Color        = {0.1020f, 0.1098f, 0.1176f, 1.0f},
-		.BorderColor  = {0.1804f, 0.1961f, 0.2118f, 1.0f},
-		.BorderWidth  = 2.f,
-		.CornerRadius = {4.f, 4.f, 4.f, 4.f},
-	},
-
-	.Hovered = 
-	{
-		.Color        = {0.1020f, 0.1098f, 0.1176f, 1.0f},
-		.BorderColor  = {0.9176f, 0.3451f, 0.0471f, 1.0f},
-		.BorderWidth  = 2.f,
-		.CornerRadius = {4.f, 4.f, 4.f, 4.f},
-	},
-};
-
+// TODO: Clear the renderer API. Just remove all the bullshit and get something basic working.
+// We need a simpler API maybe?
 
 void
-UpdateEngine(int WindowWidth, int WindowHeight, gui_pointer_event_list *PointerEventList, renderer *Renderer, engine_memory *EngineMemory)
+UpdateEngine(int WindowWidth, int WindowHeight, gui_input_queue *InputQueue, renderer *Renderer, engine_memory *EngineMemory)
 {
-	static engine_state Engine;
+    RendererEnterFrame((clear_color) { .R = 0.f, .G = 0.f, .B = 0.f, .A = 1.f }, Renderer);
 
-	if (!Engine.IsInitialized)
+	// Just testing the 3D path so we can start working
 	{
+		camera Camera = CreateCamera(Vec3(0.0f, 0.0f, -0.2f), 60.0f, (float)WindowWidth / (float)WindowHeight);
+
+		mesh_group_params GroupParams =
 		{
-			gui_memory_footprint Footprint = GuiGetLayoutTreeFootprint(128);
-			gui_memory_block     Block =
-			{
-				.SizeInBytes = Footprint.SizeInBytes,
-				.Base        = PushArena(EngineMemory->StateMemory, Footprint.SizeInBytes, Footprint.Alignment),
-			};
+			.WorldMatrix      = GetCameraWorldMatrix(&Camera),
+			.ViewMatrix       = GetCameraViewMatrix(&Camera),
+			.ProjectionMatrix = GetCameraProjectionMatrix(&Camera),
+			.CameraPosition   = Camera.Position,
+			.LightCount       = 0,
+		};
 
-			Engine.GuiTree = GuiPlaceLayoutTreeInMemory(128, Block);
-		}
-
+		render_batch_list *BatchList   = PushMeshGroupParams(&GroupParams, EngineMemory->FrameMemory, &Renderer->PassList);
+		mesh_batch_params  BatchParams =
 		{
-			gui_resource_table_params Params =
-			{
-				.HashSlotCount = 32,
-				.EntryCount    = 128,
-			};
+			.Material = GetBuiltinMaterial(Renderer, EngineMemory->FrameMemory),
+		};
 
-			gui_memory_footprint Footprint = GuiGetResourceTableFootprint(Params);
-			gui_memory_block     Block =
-			{
-				.SizeInBytes = Footprint.SizeInBytes,
-				.Base        = PushArena(EngineMemory->StateMemory, Footprint.SizeInBytes, Footprint.Alignment),
-			};
+		PushMeshBatchParams(&BatchParams, MESH_INSTANCE_PER_BATCH, EngineMemory->FrameMemory, BatchList);
 
-			Engine.GuiResourceTable = GuiPlaceResourceTableInMemory(Params, Block);
-		}
-
-		Engine.IsInitialized = true;
+		mesh_instance *Instance = PushDataInBatchList(EngineMemory->FrameMemory, BatchList, MESH_INSTANCE_PER_BATCH);
+		Instance->MeshHandle   = GetBuiltinQuadMesh(Renderer, EngineMemory->FrameMemory);
+		Instance->Transform    = Vec3(0.0f, 0.0f, 0.0f);
+		Instance->SubmeshIndex = 0;
 	}
 
-	clear_color Color = (clear_color){.R = 0.f, .G = 0.f, .B = 0.f, .A = 1.f};
-	RendererEnterFrame(Color, Renderer);
-
-	GuiBeginFrame(PointerEventList, Engine.GuiTree);
-
-	uint32_t WindowFlags = Gui_NodeFlags_ClipContent | Gui_NodeFlags_IsDraggable | Gui_NodeFlags_IsResizable;
-	gui_node Window      = GuiCreateNode(0, WindowFlags, Engine.GuiTree); GuiUpdateLayout(Window, &WindowLayout, Engine.GuiTree); GuiUpdateStyle(Window, &WindowStyle, Engine.GuiTree);
-
-	if (GuiEnterParent(Window, Engine.GuiTree, PushStruct(EngineMemory->FrameMemory, gui_parent_node)))
-	{
-		gui_node Panel0 = GuiCreateNode(1, Gui_NodeFlags_None, Engine.GuiTree); GuiUpdateLayout(Panel0, &PanelLayout, Engine.GuiTree); GuiUpdateStyle(Panel0, &PanelStyle, Engine.GuiTree);
-		gui_node Panel1 = GuiCreateNode(2, Gui_NodeFlags_None, Engine.GuiTree); GuiUpdateLayout(Panel1, &PanelLayout, Engine.GuiTree); GuiUpdateStyle(Panel1, &PanelStyle, Engine.GuiTree);
-
-		GuiLeaveParent(Window, Engine.GuiTree);
-	}
-
-	GuiComputeTreeLayout(Engine.GuiTree);
-
-	DrawComputedLayoutTree(Engine.GuiTree, EngineMemory->FrameMemory, Renderer);
-
-	GuiEndFrame();
 
 	RendererLeaveFrame(WindowWidth, WindowHeight, EngineMemory, Renderer);
 } 

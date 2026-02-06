@@ -1,121 +1,40 @@
 #pragma once
 
-#include "assets.h"
 #include "engine/math/matrix.h"
-#include <engine/math/vector.h>
+#include "engine/math/vector.h"
 
-#include "third_party/gui/gui.h"
+// Probably Temporary
+#include "resources.h"
 
-typedef struct renderer renderer;
+// =====================================================
+// Forward declarations
+// =====================================================
+
+typedef struct renderer      renderer;
 typedef struct engine_memory engine_memory;
-typedef struct renderer_resource_manager renderer_resource_manager;
-typedef struct resource_reference_table  resource_reference_table;
 
+// =====================================================
+// TEMP / shared vertex formats
+// =====================================================
 
-// ==============================================
-// <Resources> 
-// ==============================================
-
-
-#define MAX_SUBMESH_COUNT 8
-
-
-typedef enum
+typedef struct mesh_vertex
 {
-    RendererResource_None = 0,
-
-    // Base
-
-    RendererResource_Texture2D    = 1,
-    RendererResource_TextureView  = 2,
-    RendererResource_VertexBuffer = 3,
-
-    // Composite
-
-    RendererResource_Material     = 4,
-    RendererResource_StaticMesh   = 5,
-
-    RendererResource_Count = 6,
-} RendererResource_Type;
+    vec3 Position;
+    vec2 TexCoord;
+    vec3 Normal;
+} mesh_vertex;
 
 
-typedef struct
-{
-    uint32_t              Value;
-    RendererResource_Type Type;
-} resource_handle;
+// -----------------------------------------------------
+// Backend hooks (implemented per renderer backend)
+// -----------------------------------------------------
 
+void *RendererCreateTexture       (loaded_texture Texture, renderer *Renderer);
+void *RendererCreateVertexBuffer  (void *Data, uint64_t Size, renderer *Renderer);
 
-typedef struct
-{
-    void *Data;
-} renderer_backend_resource;
-
-
-typedef struct
-{
-    resource_handle Maps[MaterialMap_Count];
-} renderer_material;
-
-
-typedef struct
-{
-    uint64_t        VertexCount;
-    uint64_t        VertexStart;
-    resource_handle Material;
-} renderer_static_submesh;
-
-
-typedef struct
-{
-    resource_handle         VertexBuffer;
-    uint64_t                VertexBufferSize;
-    renderer_static_submesh Submeshes[MAX_SUBMESH_COUNT];
-    uint32_t                SubmeshCount;
-} renderer_static_mesh;
-
-
-typedef struct
-{
-    uint64_t Value;
-} resource_uuid;
-
-
-typedef struct
-{
-    uint32_t        Id;
-    resource_handle Handle;
-} resource_reference_state;
-
-
-void                        LoadAssetFileData             (asset_file_data AssetFile, memory_arena *Arena, renderer *Renderer);
-
-resource_uuid               MakeResourceUUID              (byte_string PathToResource);
-resource_reference_state    FindResourceByUUID            (resource_uuid UUID, resource_reference_table *Table);
-
-resource_handle             BindResourceHandle            (resource_handle Handle, renderer_resource_manager *ResourceManager);
-resource_handle             UnbindResourceHandle          (resource_handle Handle, renderer_resource_manager *ResourceManager);
-
-
-renderer_resource_manager * CreateResourceManager         (memory_arena *Arena);
-resource_reference_table  * CreateResourceReferenceTable  (memory_arena *Arena);
-
-void * AccessUnderlyingResource  (resource_handle Handle, renderer_resource_manager *ResourceManager);
-
-
-// 
-// Backend specific functions that must be implemented by every backend
-//
-
-
-void * RendererCreateTexture       (loaded_texture Texture, renderer *Renderer);
-void * RendererCreateVertexBuffer  (void *Data, uint64_t Size, renderer *Renderer);
-
-// ==============================================
-// <Camera>
-// ==============================================
-
-// Probably move this to scene.
+// =====================================================
+// Camera (likely scene-level later)
+// =====================================================
 
 typedef struct
 {
@@ -129,82 +48,88 @@ typedef struct
     float FarPlane;
 } camera;
 
-camera CreateCamera               (vec3 Position, float FovY, float AspectRatio);
+camera CreateCamera(vec3 Position, float FovY, float AspectRatio);
 
-mat4x4 GetCameraWorldMatrix       (camera *Camera);
-mat4x4 GetCameraViewMatrix        (camera *Camera);
-mat4x4 GetCameraProjectionMatrix  (camera *Camera);
+mat4x4 GetCameraWorldMatrix(camera *Camera);
+mat4x4 GetCameraViewMatrix(camera *Camera);
+mat4x4 GetCameraProjectionMatrix(camera *Camera);
 
-
-// ==============================================
-// <Lighting> 
-// ==============================================
-
+// =====================================================
+// Lighting
+// =====================================================
 
 typedef struct
 {
-    vec3   Position;
-    float  Intensity;
-    vec3   Color;
+    vec3  Position;
+    float Intensity;
+    vec3  Color;
     float _Pad0;
 } light_source;
 
+// =====================================================
+// Drawing / submission
+// =====================================================
 
-// ==============================================
-// <Drawing>
-// ==============================================
-
-
-#define MAX_LIGHT_COUNT  8
-
+#define MAX_LIGHT_COUNT 8
 
 typedef enum
 {
     RenderPass_None = 0,
-    RenderPass_Mesh = 1,
-    RenderPass_UI   = 2,
+    RenderPass_Mesh,
+    RenderPass_UI,
 } RenderPassType;
-
 
 typedef enum
 {
-    RenderCommand_None           = 0,
-    RenderCommand_StaticGeometry = 1,
+    RenderCommand_None = 0,
+    RenderCommand_StaticGeometry,
 } RenderCommand_Type;
+
+// -----------------------------------------------------
+// Shared utility types (maybe move later)
+// -----------------------------------------------------
+
+typedef struct bounding_box
+{
+    float Left, Top, Right, Bottom;
+} bounding_box;
+
+typedef struct color
+{
+    float R, G, B, A;
+} color;
+
+// -----------------------------------------------------
+// Render primitives
+// -----------------------------------------------------
+
+typedef struct
+{
+    bounding_box Bounds;
+    bounding_box TextureSource;
+    color        ColorTL;
+    color        ColorBL;
+    color        ColorTR;
+    color        ColorBR;
+    bounding_box CornerRadius;
+    float        BorderWidth;
+    float        Softness;
+    float        SampleTexture;
+    float        _Padding0;
+} gui_rect;
 
 
 typedef struct
 {
     resource_handle MeshHandle;
-} static_geometry_command;
+    uint32_t        SubmeshIndex;
+    vec3            Transform;
+} mesh_instance;
 
 
-typedef struct
-{
-    RenderCommand_Type Type;
-
-    union
-    {
-        static_geometry_command StaticGeometry;
-    };
-} render_command;
-
-
-typedef struct
-{
-    gui_bounding_box  Bounds;
-    gui_bounding_box  TextureSource;
-    gui_color         ColorTL;
-    gui_color         ColorBL;
-    gui_color         ColorTR;
-    gui_color         ColorBR;
-    gui_corner_radius CornerRadius;
-    float             BorderWidth;
-    float             Softness;
-    float             SampleTexture;
-    float            _Padding0;
-} gui_rect;
-
+// -----------------------------------------------------
+// Batching
+// -----------------------------------------------------
 
 typedef struct
 {
@@ -213,18 +138,15 @@ typedef struct
     uint64_t ByteCapacity;
 } render_batch;
 
-
 typedef struct
 {
     resource_handle Material;
 } mesh_batch_params;
 
-
 typedef struct
 {
     void *Data;
 } ui_batch_params;
-
 
 typedef struct render_batch_node render_batch_node;
 struct render_batch_node
@@ -239,7 +161,6 @@ struct render_batch_node
     };
 };
 
-
 typedef struct
 {
     render_batch_node *First;
@@ -248,6 +169,9 @@ typedef struct
     uint64_t           BytesPerInstance;
 } render_batch_list;
 
+// -----------------------------------------------------
+// Mesh pass grouping
+// -----------------------------------------------------
 
 typedef struct
 {
@@ -260,15 +184,13 @@ typedef struct
     uint32_t     LightCount;
 } mesh_group_params;
 
-
 typedef struct mesh_group_node mesh_group_node;
 struct mesh_group_node
 {
-    mesh_group_node  *Next;
+    mesh_group_node *Next;
     render_batch_list BatchList;
     mesh_group_params Params;
 };
-
 
 typedef struct
 {
@@ -277,21 +199,22 @@ typedef struct
     uint32_t         Count;
 } render_pass_params_mesh;
 
+// -----------------------------------------------------
+// UI pass grouping
+// -----------------------------------------------------
 
 typedef struct
 {
-    gui_bounding_box Clip;
+    bounding_box Clip;
 } ui_group_params;
-
 
 typedef struct ui_group_node ui_group_node;
 struct ui_group_node
 {
-    ui_group_node    *Next;
+    ui_group_node *Next;
     render_batch_list BatchList;
     ui_group_params   Params;
 };
-
 
 typedef struct
 {
@@ -300,6 +223,9 @@ typedef struct
     uint32_t       Count;
 } render_pass_params_ui;
 
+// -----------------------------------------------------
+// Render passes
+// -----------------------------------------------------
 
 typedef struct
 {
@@ -311,7 +237,6 @@ typedef struct
     } Params;
 } render_pass;
 
-
 typedef struct render_pass_node render_pass_node;
 struct render_pass_node
 {
@@ -319,49 +244,47 @@ struct render_pass_node
     render_pass       Value;
 };
 
-
 typedef struct
 {
     render_pass_node *First;
     render_pass_node *Last;
 } render_pass_list;
 
+// -----------------------------------------------------
+// Submission helpers
+// -----------------------------------------------------
 
 #define MESH_INSTANCE_PER_BATCH 10
 #define UI_INSTANCE_PER_BATCH   50
 
+void              * PushDataInBatchList(memory_arena *Arena, render_batch_list *BatchList, uint64_t InstancePerBatch);
+                    
+render_batch_list * PushMeshGroupParams(mesh_group_params *Params, memory_arena *Arena, render_pass_list *PassList);
+render_batch_list * PushUIGroupParams(ui_group_params *Params, memory_arena *Arena, render_pass_list *PassList);
+                    
+void                PushMeshBatchParams(mesh_batch_params *Params, uint64_t InstancePerBatch, memory_arena *Arena, render_batch_list *BatchList);
+void                PushUIBatchParams(ui_batch_params *Params, uint64_t InstancePerBatch, memory_arena *Arena, render_batch_list *BatchList);
 
-void              * PushDataInBatchList     (memory_arena *Arena, render_batch_list *BatchList, uint64_t InstancePerBatch);
-                                            
-render_batch_list * PushMeshGroupParams     (mesh_group_params *Params, memory_arena *Arena, render_pass_list *PassList);
-render_batch_list * PushUIGroupParams       (ui_group_params *Params, memory_arena *Arena, render_pass_list *PassList);
-                                            
-void                PushMeshBatchParams     (mesh_batch_params *Params, uint64_t InstancePerBatch, memory_arena *Arena, render_batch_list *BatchList);
-void                PushUIBatchParams       (ui_batch_params *Params, uint64_t InstancePerBatch, memory_arena *Arena, render_batch_list *BatchList);
-
-
-// ==============================================
-// <> 
-// ==============================================
+// =====================================================
+// Frame control
+// =====================================================
 
 typedef struct
 {
     float R, G, B, A;
 } clear_color;
 
+void RendererEnterFrame(clear_color Color, renderer *Renderer);
+void RendererLeaveFrame(int Width, int Height, engine_memory *EngineMemory, renderer *Renderer);
 
-void RendererEnterFrame  (clear_color Color, renderer *Renderer);
-void RendererLeaveFrame  (int Width, int Height, engine_memory *EngineMemory, renderer *Renderer);
-
-// ==============================================
-// <> 
-// ==============================================
-
+// =====================================================
+// Renderer root object
+// =====================================================
 
 typedef struct renderer
 {
-    void                      *Backend;
+    void *Backend;
     render_pass_list           PassList;
     renderer_resource_manager *Resources;
-    resource_reference_table  *ReferenceTable;
+    resource_reference_table *ReferenceTable;
 } renderer;

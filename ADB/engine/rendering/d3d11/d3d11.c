@@ -17,7 +17,6 @@
 #include "utilities.h"
 #include "platform/platform.h"
 #include "engine/rendering/renderer.h"
-#include "engine/rendering/assets.h"
 #include <engine/math/matrix.h>
 
 #include "mesh_vertex_shader.h"
@@ -32,10 +31,10 @@
 
 typedef struct
 {
-    ID3D11Device           *Device;
-    ID3D11DeviceContext    *DeviceContext;
-    IDXGISwapChain1        *SwapChain;
-    ID3D11RenderTargetView *RenderView;
+    ID3D11Device            *Device;
+    ID3D11DeviceContext     *DeviceContext;
+    IDXGISwapChain1         *SwapChain;
+    ID3D11RenderTargetView  *RenderView;
 
     // Mesh Objects
 
@@ -82,12 +81,14 @@ typedef struct
 
 typedef struct
 {
-    float          ScaleX, _Padding0, _Padding1, _Padding2;
-    float          _Padding3, ScaleY, _Padding4, _Padding5;
-    float          _Padding6, _Padding7, _Padding8, _Padding9;
+    float ScaleX, _Padding0, _Padding1, _Padding2;
+    float _Padding3, ScaleY, _Padding4, _Padding5;
+    float _Padding6, _Padding7, _Padding8, _Padding9;
 
-    gui_dimensions ViewportSizeInPixel;
-    gui_dimensions AtlasSizeInPixel;
+    float ViewportSizeX;
+    float ViewportSizeY;
+    float AtlasSizeX;
+    float AtlasSizeY;
 } d3d11_ui_batch_data;
 
 
@@ -554,58 +555,43 @@ RendererLeaveFrame(int Width, int Height, engine_memory *EngineMemory, renderer 
                         renderer_backend_resource *ColorResource     = AccessUnderlyingResource(Material->Maps[MaterialMap_Color], Renderer->Resources);
                         ID3D11ShaderResourceView  *ColorView         = ColorResource ? (ID3D11ShaderResourceView *)ColorResource->Data : 0;
                         renderer_backend_resource *NormalResource    = AccessUnderlyingResource(Material->Maps[MaterialMap_Normal], Renderer->Resources);
-                        ID3D11ShaderResourceView  *NormalView        = ColorResource ? (ID3D11ShaderResourceView *)NormalResource->Data : 0;
+                        ID3D11ShaderResourceView  *NormalView        = NormalResource ? (ID3D11ShaderResourceView *)NormalResource->Data : 0;
                         renderer_backend_resource *RoughnessResource = AccessUnderlyingResource(Material->Maps[MaterialMap_Roughness], Renderer->Resources);
-                        ID3D11ShaderResourceView  *RoughnessView     = ColorResource ? (ID3D11ShaderResourceView *)RoughnessResource->Data : 0;
+                        ID3D11ShaderResourceView  *RoughnessView     = RoughnessResource ? (ID3D11ShaderResourceView *)RoughnessResource->Data : 0;
 
                         Context->lpVtbl->PSSetShaderResources(Context, 0, 1, &ColorView);
                         Context->lpVtbl->PSSetShaderResources(Context, 1, 1, &NormalView);
                         Context->lpVtbl->PSSetShaderResources(Context, 2, 1, &RoughnessView);
                     }
 
-                    // Rewrite this.
+                    // Iterate Instances (tier3: Transforms/Submesh)
 
-                    uint32_t CommandCount = Batch->ByteCount / sizeof(render_command);
-                    uint64_t AtByte       = 0;
+                    uint32_t InstanceCount = Batch->ByteCount / sizeof(mesh_instance);
+                    uint64_t AtByte        = 0;
 
-                    for (uint32_t CommandIdx = 0; CommandIdx < CommandCount; ++CommandIdx)
+                    for (uint32_t InstanceIdx = 0; InstanceIdx < InstanceCount; ++InstanceIdx)
                     {
-                        render_command *Command = Batch->Memory + AtByte;
+                        mesh_instance        *Instance = Batch->Memory + AtByte;
+                        renderer_static_mesh *Mesh     = AccessUnderlyingResource(Instance->MeshHandle, Renderer->Resources);
 
-                        switch (Command->Type)
+                        // Bind vertex buffer (TODO: Should not be done at this tier!)
                         {
+                            renderer_backend_resource *VertexBufferBD = AccessUnderlyingResource(Mesh->VertexBuffer, Renderer->Resources);
+                            ID3D11Buffer              *VertexBuffer   = (ID3D11Buffer *)VertexBufferBD->Data;
 
-                        case RenderCommand_StaticGeometry:
-                        {
-                            renderer_static_mesh *StaticMesh = AccessUnderlyingResource(Command->StaticGeometry.MeshHandle, Renderer->Resources);
-                            assert(StaticMesh);
-
-                            // Bind vertex buffer
-                            {
-                                renderer_backend_resource *VertexBufferBD = AccessUnderlyingResource(StaticMesh->VertexBuffer, Renderer->Resources);
-                                ID3D11Buffer              *VertexBuffer   = (ID3D11Buffer *)VertexBufferBD->Data;
-
-                                UINT32 Stride = sizeof(mesh_vertex_data);
-                                UINT32 Offset = 0;
-                                Context->lpVtbl->IASetVertexBuffers(Context, 0, 1, &VertexBuffer, &Stride, &Offset);
-                            }
-
-                            // Draw each submesh (they all share the material from the batch)
-                            for (uint32_t SubmeshIdx = 0; SubmeshIdx < StaticMesh->SubmeshCount; ++SubmeshIdx)
-                            {
-                                renderer_static_submesh *Submesh = &StaticMesh->Submeshes[SubmeshIdx];
-                                Context->lpVtbl->Draw(Context, Submesh->VertexCount, Submesh->VertexStart);
-                            }
-                        } break;
-
-                        default:
-                        {
-                            assert(!"INVALID ENGINE STATE");
-                        } break;
-
+                            UINT32 Stride = sizeof(mesh_vertex_data);
+                            UINT32 Offset = 0;
+                            Context->lpVtbl->IASetVertexBuffers(Context, 0, 1, &VertexBuffer, &Stride, &Offset);
                         }
 
-                        AtByte += sizeof(render_command);
+                        // Draw each submesh (TODO: Should read which submesh we are trying to draw?)
+                        for (uint32_t SubmeshIdx = 0; SubmeshIdx < Mesh->SubmeshCount; ++SubmeshIdx)
+                        {
+                            renderer_static_submesh *Submesh = &Mesh->Submeshes[SubmeshIdx];
+                            Context->lpVtbl->Draw(Context, Submesh->VertexCount, Submesh->VertexStart);
+                        }
+
+                        AtByte += sizeof(mesh_instance);
                     }
                 }
             }
@@ -653,8 +639,10 @@ RendererLeaveFrame(int Width, int Height, engine_memory *EngineMemory, renderer 
                     {
                         .ScaleX              = 1.f,
                         .ScaleY              = 1.f,
-                        .ViewportSizeInPixel = (gui_dimensions){Width, Height},
-                        .AtlasSizeInPixel    = (gui_dimensions){0.f, 0.f },
+                        .ViewportSizeX       = Width,
+                        .ViewportSizeY       = Height,
+                        .AtlasSizeX          = 0.f,
+                        .AtlasSizeY          = 0.f,
                     };
 
                     D3D11_MAPPED_SUBRESOURCE Resource = {};

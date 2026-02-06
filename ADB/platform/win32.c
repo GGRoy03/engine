@@ -4,7 +4,7 @@
 #include <assert.h>
 
 
-#include "third_party/gui/gui.h"
+#include "third_party/gui/gui2.h"
 
 
 #define WIN32_LEAN_AND_MEAN
@@ -175,13 +175,19 @@ ThreadProc(LPVOID lpParameter)
 // ==============================================
 
 
-typedef struct
+typedef struct win32_state
 {
-    gui_pointer_event_list *PointerEventList;
-    int                     MouseX;
-    int                     MouseY;
-    memory_arena           *WriteArena;
+    float            MouseX;
+    float            MouseY;
+    gui_input_queue *InputQueue;
 } win32_state;
+
+
+#define WIN32_POINTER_MOUSE 0
+
+
+//GUI_API void              GuiPushPointerMoveEvent(float DeltaX, float DeltaY, gui_input_queue *Queue);
+//GUI_API void              GuiPushPointerButtonEvent(float PosX, float PosY, int IsClicked, Gui_PointerButton Button, gui_input_queue *Queue);
 
 
 static LRESULT CALLBACK
@@ -192,29 +198,34 @@ Win32MessageHandler(HWND Hwnd, UINT Message, WPARAM WParam, LPARAM LParam)
     switch (Message)
     {
 
-    case WM_MOUSEMOVE:
-    {
-        gui_point Mouse     = (gui_point){(float)GET_X_LPARAM(LParam), (float)GET_Y_LPARAM(LParam)};
-        gui_point LastMouse = (gui_point){(float)Win32->MouseX, (float)Win32->MouseY};
+    // Technically deltas could be tracked internally?
+    //case WM_MOUSEMOVE:
+    //{
+    //    float MouseX = (float)GET_X_LPARAM(LParam);
+    //    float MouseY = (float)GET_Y_LPARAM(LParam);
+    //    float DeltaX = MouseX - Win32->MouseX;
+    //    float DeltaY = MouseY - Win32->MouseY;
 
-        GuiPushPointerMoveEvent(Mouse, LastMouse, PushStruct(Win32->WriteArena, gui_pointer_event_node), Win32->PointerEventList);
+    //    GuiPushPointerMoveEvent(DeltaX, DeltaY, Win32->InputQueue);
 
-        Win32->MouseX = (int)Mouse.X;
-        Win32->MouseY = (int)Mouse.Y;
-    } break;
+    //    Win32->MouseX = MouseX;
+    //    Win32->MouseY = MouseY;
+    //} break;
 
     case WM_LBUTTONDOWN:
     {
-        gui_point Mouse = (gui_point){(float)GET_X_LPARAM(LParam), (float)GET_Y_LPARAM(LParam)};
+        float MouseX = (float)GET_X_LPARAM(LParam);
+        float MouseY = (float)GET_Y_LPARAM(LParam);
 
-        GuiPushPointerClickEvent(Gui_PointerButton_Primary, Mouse, PushStruct(Win32->WriteArena, gui_pointer_event_node), Win32->PointerEventList);
+        GuiPushPointerButtonEvent(MouseX, MouseY, 1, Gui_PointerButton_Primary, Win32->InputQueue);
     } break;
 
     case WM_LBUTTONUP:
     {
-        gui_point Mouse = (gui_point){(float)GET_X_LPARAM(LParam), (float)GET_Y_LPARAM(LParam)};
+        float MouseX = (float)GET_X_LPARAM(LParam);
+        float MouseY = (float)GET_Y_LPARAM(LParam);
 
-        GuiPushPointerReleaseEvent(Gui_PointerButton_Primary, Mouse, PushStruct(Win32->WriteArena, gui_pointer_event_node), Win32->PointerEventList);
+        GuiPushPointerButtonEvent(MouseX, MouseY, 1, Gui_PointerButton_Primary, Win32->InputQueue);
     } break;
 
     case WM_DESTROY:
@@ -327,13 +338,16 @@ WinMain(HINSTANCE HInstance, HINSTANCE PrevInstance, LPSTR CmdLine, int CmdShow)
         EngineMemory.WorkQueue    = &WorkQueue;
     }
 
+    gui_input_event InputBuffer[64] = {0};
+    gui_input_queue InputQueue      = GuiCreateInputQueue(InputBuffer, 64);
+
+
     win32_state *Win32 = PushStruct(EngineMemory.StateMemory, win32_state);
     if (Win32)
     {
-        Win32->MouseX           = 0;
-        Win32->MouseY           = 0;
-        Win32->PointerEventList = PushStruct(EngineMemory.StateMemory, gui_pointer_event_list);
-        Win32->WriteArena       = EngineMemory.FrameMemory;
+        Win32->MouseX     = 0;
+        Win32->MouseY     = 0;
+        Win32->InputQueue = &InputQueue;
 
         SetWindowLongPtrA(WindowHandle, GWLP_USERDATA, (LONG_PTR)Win32);
     }
@@ -348,6 +362,8 @@ WinMain(HINSTANCE HInstance, HINSTANCE PrevInstance, LPSTR CmdLine, int CmdShow)
 
     while (Running)
     {
+        PopArenaTo(EngineMemory.FrameMemory, 0);
+
         MSG Message;
         while (PeekMessageA(&Message, 0, 0, 0, PM_REMOVE))
         {
@@ -362,12 +378,7 @@ WinMain(HINSTANCE HInstance, HINSTANCE PrevInstance, LPSTR CmdLine, int CmdShow)
 
         Win32GetClientSize(WindowHandle, &ClientWidth, &ClientHeight);
 
-        UpdateEngine(ClientWidth, ClientHeight, Win32->PointerEventList, Renderer, &EngineMemory);
-
-        // Frame Cleanup
-        {
-            PopArenaTo(EngineMemory.FrameMemory, 0);
-        }
+        UpdateEngine(ClientWidth, ClientHeight, &InputQueue, Renderer, &EngineMemory);
 
         Win32Sleep(8);
     }
