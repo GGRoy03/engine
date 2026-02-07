@@ -14,6 +14,7 @@
 // Static Geometry / Data
 // =====================================================
 
+
 static mesh_vertex_data QuadVertices[6] =
 {
 	{.Position = {-0.5f, -0.5f, 0.0f}, .Texture = {0, 1}, .Normal = {0, 0, 1}},
@@ -24,6 +25,43 @@ static mesh_vertex_data QuadVertices[6] =
 	{.Position = { 0.5f,  0.5f, 0.0f}, .Texture = {1, 0}, .Normal = {0, 0, 1}},
 	{.Position = {-0.5f,  0.5f, 0.0f}, .Texture = {0, 0}, .Normal = {0, 0, 1}},
 };
+
+
+static mesh_vertex_data GridCellVertices[24] =
+{
+    {.Position = {-0.5f, -0.5f, 0.0f}, .Texture = {0, 1}, .Normal = {0, 0, 1} },
+    {.Position = { 0.5f, -0.5f, 0.0f}, .Texture = {1, 1}, .Normal = {0, 0, 1} },
+    {.Position = { 0.5f, -0.45f, 0.0f}, .Texture = {1, 0}, .Normal = {0, 0, 1} },
+
+    {.Position = {-0.5f, -0.5f, 0.0f}, .Texture = {0, 1}, .Normal = {0, 0, 1} },
+    {.Position = { 0.5f, -0.45f, 0.0f}, .Texture = {1, 0}, .Normal = {0, 0, 1} },
+    {.Position = {-0.5f, -0.45f, 0.0f}, .Texture = {0, 0}, .Normal = {0, 0, 1} },
+
+    {.Position = {-0.5f,  0.45f, 0.0f}, .Texture = {0, 1}, .Normal = {0, 0, 1} },
+    {.Position = { 0.5f,  0.45f, 0.0f}, .Texture = {1, 1}, .Normal = {0, 0, 1} },
+    {.Position = { 0.5f,  0.5f, 0.0f}, .Texture = {1, 0}, .Normal = {0, 0, 1} },
+
+    {.Position = {-0.5f,  0.45f, 0.0f}, .Texture = {0, 1}, .Normal = {0, 0, 1} },
+    {.Position = { 0.5f,  0.5f, 0.0f}, .Texture = {1, 0}, .Normal = {0, 0, 1} },
+    {.Position = {-0.5f,  0.5f, 0.0f}, .Texture = {0, 0}, .Normal = {0, 0, 1} },
+
+    {.Position = {-0.5f, -0.5f, 0.0f}, .Texture = {0, 1}, .Normal = {0, 0, 1} },
+    {.Position = {-0.45f, -0.5f, 0.0f}, .Texture = {1, 1}, .Normal = {0, 0, 1} },
+    {.Position = {-0.45f,  0.5f, 0.0f}, .Texture = {1, 0}, .Normal = {0, 0, 1} },
+
+    {.Position = {-0.5f, -0.5f, 0.0f}, .Texture = {0, 1}, .Normal = {0, 0, 1} },
+    {.Position = {-0.45f,  0.5f, 0.0f}, .Texture = {1, 0}, .Normal = {0, 0, 1} },
+    {.Position = {-0.5f,  0.5f, 0.0f}, .Texture = {0, 0}, .Normal = {0, 0, 1} },
+
+    {.Position = { 0.45f, -0.5f, 0.0f}, .Texture = {0, 1}, .Normal = {0, 0, 1} },
+    {.Position = { 0.5f,  -0.5f, 0.0f}, .Texture = {1, 1}, .Normal = {0, 0, 1} },
+    {.Position = { 0.5f,   0.5f, 0.0f}, .Texture = {1, 0}, .Normal = {0, 0, 1} },
+
+    {.Position = { 0.45f, -0.5f, 0.0f}, .Texture = {0, 1}, .Normal = {0, 0, 1} },
+    {.Position = { 0.5f,   0.5f, 0.0f}, .Texture = {1, 0}, .Normal = {0, 0, 1} },
+    {.Position = { 0.45f,  0.5f, 0.0f}, .Texture = {0, 0}, .Normal = {0, 0, 1} },
+};
+
 
 
 // =====================================================
@@ -57,9 +95,6 @@ typedef struct resource_reference_table
     resource_reference_entry Entries[MAX_RENDERER_RESOURCE];
     uint32_t                 FirstFreeEntry;
 } resource_reference_table;
-
-
-
 
 
 typedef struct renderer_resource
@@ -513,52 +548,84 @@ GetBuiltinMaterial(renderer *Renderer, engine_memory *Memory)
     return MaterialHandle;
 }
 
+
 resource_handle
-GetBuiltinQuadMesh(renderer *Renderer, engine_memory *Memory)
+GetBuiltinMesh(Renderer_BuiltinMesh Mesh, renderer *Renderer, memory_arena *Arena)
 {
-	if (!Renderer || !Memory)
-	{
-		return MakeInvalidResourceHandle();
-	}
+    if (!Renderer || !Arena)
+    {
+        return MakeInvalidResourceHandle();
+    }
 
-	resource_uuid   MeshUUID   = MakeResourceUUID(ByteStringLiteral("builtin::quad"));
-	resource_state  MeshState  = FindResourceByUUID(MeshUUID, Renderer->ReferenceTable);
-	resource_handle MeshHandle = MeshState.Handle;
+    byte_string       MeshName     = ByteString(0, 0);
+    mesh_vertex_data *MeshData     = 0;
+    size_t            MeshDataSize = 0;
+    uint32_t          VertexCount  = 0;
 
-	if (!IsValidResourceHandle(MeshHandle))
-	{
-		MeshHandle = CreateResourceHandle(MeshUUID, RendererResource_StaticMesh, Renderer->Resources);
-		if (!IsValidResourceHandle(MeshHandle))
-		{
-			return MakeInvalidResourceHandle();
-		}
+    switch (Mesh)
+    {
+    
+    case Renderer_BuiltinMesh_Quad:
+    {
+        MeshName     = ByteStringLiteral("builtin::quad");
+        MeshData     = QuadVertices;
+        MeshDataSize = sizeof(QuadVertices);
+        VertexCount  = ArrayCount(QuadVertices);
+    } break;
+
+    case Renderer_BuiltinMesh_Cell:
+    {
+        MeshName     = ByteStringLiteral("builtin::cell");
+        MeshData     = GridCellVertices;
+        MeshDataSize = sizeof(GridCellVertices);
+        VertexCount  = ArrayCount(GridCellVertices);
+    } break;
+
+    }
+
+    if (!IsValidByteString(MeshName) || !MeshData || !MeshDataSize || VertexCount == 0)
+    {
+        return MakeInvalidResourceHandle();
+    }
+
+    resource_uuid   MeshUUID   = MakeResourceUUID(MeshName);
+    resource_state  MeshState  = FindResourceByUUID(MeshUUID, Renderer->ReferenceTable);
+    resource_handle MeshHandle = MeshState.Handle;
+
+    if (!IsValidResourceHandle(MeshHandle))
+    {
+        MeshHandle = CreateResourceHandle(MeshUUID, RendererResource_StaticMesh, Renderer->Resources);
+        if (!IsValidResourceHandle(MeshHandle))
+        {
+            return MakeInvalidResourceHandle();
+        }
 
         UpdateResourceReferenceTable(MeshState.Id, MeshHandle, Renderer->ReferenceTable);
 
 
 
-		// TODO:
-		// This is weird, and we should probably request a chunk out of some buffer. Fine for now.
-		// This code is beyond beefy. It also calls FindOrCreate which seems like a bad idea.
-		// Also, probably missing some error checks.
+        // TODO:
+        // This is weird, and we should probably request a chunk out of some buffer. Fine for now.
+        // This code is beyond beefy. It also calls FindOrCreate which seems like a bad idea.
+        // Also, probably missing some error checks.
 
-		byte_string     VertexBufferNameParts[2] = {ByteStringLiteral("builtin::quad"), ByteStringLiteral("geometry")};
-		byte_string     VertexBufferResourceName = ConcatenateStrings(VertexBufferNameParts, 2, ByteStringLiteral("::"), Memory->FrameMemory);
-		resource_uuid   VertexBufferUUID         = MakeResourceUUID(VertexBufferResourceName);
-		resource_handle VertexBufferHandle       = FindOrCreateResource(VertexBufferUUID, RendererResource_VertexBuffer, Renderer->Resources, Renderer->ReferenceTable);
+        byte_string     VertexBufferNameParts[2] = {MeshName, ByteStringLiteral("geometry")};
+        byte_string     VertexBufferResourceName = ConcatenateStrings(VertexBufferNameParts, 2, ByteStringLiteral("::"), Arena);
+        resource_uuid   VertexBufferUUID         = MakeResourceUUID(VertexBufferResourceName);
+        resource_handle VertexBufferHandle       = FindOrCreateResource(VertexBufferUUID, RendererResource_VertexBuffer, Renderer->Resources, Renderer->ReferenceTable);
 
-		renderer_backend_resource *VertexBuffer     = AccessUnderlyingResource(VertexBufferHandle, Renderer->Resources);
-		uint64_t                   VertexBufferSize = sizeof(QuadVertices);
+        renderer_backend_resource *VertexBuffer     = AccessUnderlyingResource(VertexBufferHandle, Renderer->Resources);
+        uint64_t                   VertexBufferSize = MeshDataSize;
 
-		VertexBuffer->Data = RendererCreateVertexBuffer(QuadVertices, VertexBufferSize, Renderer);
+        VertexBuffer->Data = RendererCreateVertexBuffer(MeshData, VertexBufferSize, Renderer);
 
-		renderer_static_mesh *StaticMesh = AccessUnderlyingResource(MeshHandle, Renderer->Resources);
-		StaticMesh->VertexBuffer             = BindResourceHandle(VertexBufferHandle, Renderer->Resources);
-		StaticMesh->VertexBufferSize         = VertexBufferSize;
-		StaticMesh->SubmeshCount             = 1;
-		StaticMesh->Submeshes[0].VertexStart = 0;
-		StaticMesh->Submeshes[0].VertexCount = 6;
-	}
+        renderer_static_mesh *StaticMesh = AccessUnderlyingResource(MeshHandle, Renderer->Resources);
+        StaticMesh->VertexBuffer             = BindResourceHandle(VertexBufferHandle, Renderer->Resources);
+        StaticMesh->VertexBufferSize         = VertexBufferSize;
+        StaticMesh->SubmeshCount             = 1;
+        StaticMesh->Submeshes[0].VertexStart = 0;
+        StaticMesh->Submeshes[0].VertexCount = VertexCount;
+    }
 
-	return MeshHandle;
+    return MeshHandle;
 }

@@ -6,6 +6,9 @@
 #include "platform/platform.h"
 #include "rendering/renderer.h"
 #include "rendering/resources.h"
+#include "rendering/draw.h"
+#include "math/vector.h"
+#include <stdint.h>
 
 
 // TODO: Clear the renderer API. Just remove all the bullshit and get something basic working.
@@ -16,31 +19,20 @@ UpdateEngine(int WindowWidth, int WindowHeight, gui_input_queue *InputQueue, ren
 {
     RendererEnterFrame((clear_color) { .R = 0.f, .G = 0.f, .B = 0.f, .A = 1.f }, Renderer);
 
-	// Just testing the 3D path so we can start working
 	{
-		camera Camera = CreateCamera(Vec3(0.0f, 0.0f, -0.2f), 60.0f, (float)WindowWidth / (float)WindowHeight);
+		camera Camera = CreateCamera(Vec3(0.0f, 0.0f, -5.0f), 60.0f, (float)WindowWidth / (float)WindowHeight);
 
-		mesh_group_params GroupParams =
+		gizmo_group_params Params =
 		{
 			.WorldMatrix      = GetCameraWorldMatrix(&Camera),
 			.ViewMatrix       = GetCameraViewMatrix(&Camera),
 			.ProjectionMatrix = GetCameraProjectionMatrix(&Camera),
-			.CameraPosition   = Camera.Position,
-			.LightCount       = 0,
 		};
 
-		render_batch_list *BatchList   = PushMeshGroupParams(&GroupParams, EngineMemory->FrameMemory, &Renderer->PassList);
-		mesh_batch_params  BatchParams =
-		{
-			.Material = GetBuiltinMaterial(Renderer, EngineMemory->FrameMemory),
-		};
-
-		PushMeshBatchParams(&BatchParams, MESH_INSTANCE_PER_BATCH, EngineMemory->FrameMemory, BatchList);
-
-		mesh_instance *Instance = PushDataInBatchList(EngineMemory->FrameMemory, BatchList, MESH_INSTANCE_PER_BATCH);
-		Instance->MeshHandle   = GetBuiltinQuadMesh(Renderer, EngineMemory->FrameMemory);
-		Instance->Transform    = Vec3(0.0f, 0.0f, 0.0f);
-		Instance->SubmeshIndex = 0;
+		render_batch_list *BatchList = PushGizmoGroupParams(&Params, EngineMemory->FrameMemory, &Renderer->PassList);
+		DrawGizmoCell(Vec3(0.0f, 0.0f, 0.0f), Vec3(1.0f, 1.0f, 1.0f), BatchList, EngineMemory->FrameMemory);
+		DrawGizmoCell(Vec3(1.0f, 1.0f, 0.0f), Vec3(1.0f, 0.0f, 0.0f), BatchList, EngineMemory->FrameMemory);
+		DrawGizmoCell(Vec3(2.0f, 2.0f, 0.0f), Vec3(0.0f, 0.0f, 1.0f), BatchList, EngineMemory->FrameMemory);
 	}
 
 

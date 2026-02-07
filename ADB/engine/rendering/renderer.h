@@ -13,18 +13,6 @@
 typedef struct renderer      renderer;
 typedef struct engine_memory engine_memory;
 
-// =====================================================
-// TEMP / shared vertex formats
-// =====================================================
-
-typedef struct mesh_vertex
-{
-    vec3 Position;
-    vec2 TexCoord;
-    vec3 Normal;
-} mesh_vertex;
-
-
 // -----------------------------------------------------
 // Backend hooks (implemented per renderer backend)
 // -----------------------------------------------------
@@ -74,9 +62,11 @@ typedef struct
 
 typedef enum
 {
-    RenderPass_None = 0,
-    RenderPass_Mesh,
-    RenderPass_UI,
+    RenderPass_None  = 0,
+    RenderPass_Mesh  = 1,
+    RenderPass_UI    = 2,
+    RenderPass_Gizmo = 3,
+    RenderPass_Chunk = 4,
 } RenderPassType;
 
 typedef enum
@@ -100,8 +90,36 @@ typedef struct color
 } color;
 
 // -----------------------------------------------------
+// Core vertex formats.
+// -----------------------------------------------------
+
+
+typedef struct
+{
+    vec3 Position;
+    vec2 Texture;
+    vec3 Normal;
+} mesh_vertex_data;
+
+
+typedef struct
+{
+    vec3 Position;
+    vec2 UV;
+} tile_vertex_data;
+
+
+typedef struct gizmo_vertex_data
+{
+    vec3 Position;
+    vec3 Color;
+} gizmo_vertex_data;
+
+
+// -----------------------------------------------------
 // Render primitives
 // -----------------------------------------------------
+
 
 typedef struct
 {
@@ -125,6 +143,13 @@ typedef struct
     uint32_t        SubmeshIndex;
     vec3            Transform;
 } mesh_instance;
+
+
+typedef struct
+{
+    resource_handle VertexBuffer;
+    uint32_t        VertexCount;
+} chunk_instance;
 
 
 // -----------------------------------------------------
@@ -161,7 +186,7 @@ struct render_batch_node
     };
 };
 
-typedef struct
+typedef struct render_batch_list
 {
     render_batch_node *First;
     render_batch_node *Last;
@@ -183,6 +208,7 @@ typedef struct
     light_source Lights[MAX_LIGHT_COUNT];
     uint32_t     LightCount;
 } mesh_group_params;
+
 
 typedef struct mesh_group_node mesh_group_node;
 struct mesh_group_node
@@ -224,18 +250,51 @@ typedef struct
 } render_pass_params_ui;
 
 // -----------------------------------------------------
+// Gizmo pass grouping
+// -----------------------------------------------------
+
+
+typedef struct
+{
+    mat4x4 WorldMatrix;
+    mat4x4 ViewMatrix;
+    mat4x4 ProjectionMatrix;
+} gizmo_group_params;
+
+
+typedef struct gizmo_group_node gizmo_group_node;
+struct gizmo_group_node
+{
+    gizmo_group_node  *Next;
+    render_batch_list  BatchList;
+    gizmo_group_params Params;
+};
+
+
+typedef struct
+{
+    gizmo_group_node *First;
+    gizmo_group_node *Last;
+    uint32_t          Count;
+} render_pass_params_gizmo;
+
+
+// -----------------------------------------------------
 // Render passes
 // -----------------------------------------------------
+
 
 typedef struct
 {
     RenderPassType Type;
     union
     {
-        render_pass_params_mesh Mesh;
-        render_pass_params_ui   UI;
+        render_pass_params_mesh  Mesh;
+        render_pass_params_ui    UI;
+        render_pass_params_gizmo Gizmo;
     } Params;
 } render_pass;
+
 
 typedef struct render_pass_node render_pass_node;
 struct render_pass_node
@@ -244,26 +303,30 @@ struct render_pass_node
     render_pass       Value;
 };
 
+
 typedef struct
 {
     render_pass_node *First;
     render_pass_node *Last;
 } render_pass_list;
 
+
 // -----------------------------------------------------
 // Submission helpers
 // -----------------------------------------------------
 
-#define MESH_INSTANCE_PER_BATCH 10
-#define UI_INSTANCE_PER_BATCH   50
+#define MESH_INSTANCE_PER_BATCH  10
+#define UI_INSTANCE_PER_BATCH    50
+#define GIZMO_INSTANCE_PER_BATCH 1024
 
-void              * PushDataInBatchList(memory_arena *Arena, render_batch_list *BatchList, uint64_t InstancePerBatch);
-                    
-render_batch_list * PushMeshGroupParams(mesh_group_params *Params, memory_arena *Arena, render_pass_list *PassList);
-render_batch_list * PushUIGroupParams(ui_group_params *Params, memory_arena *Arena, render_pass_list *PassList);
-                    
-void                PushMeshBatchParams(mesh_batch_params *Params, uint64_t InstancePerBatch, memory_arena *Arena, render_batch_list *BatchList);
-void                PushUIBatchParams(ui_batch_params *Params, uint64_t InstancePerBatch, memory_arena *Arena, render_batch_list *BatchList);
+void * PushDataInBatchList(memory_arena *Arena, render_batch_list *BatchList, uint32_t InstanceCount, uint64_t InstancePerBatch);
+                                          
+render_batch_list * PushMeshGroupParams   (mesh_group_params *Params, memory_arena *Arena, render_pass_list *PassList);
+render_batch_list * PushUIGroupParams     (ui_group_params *Params, memory_arena *Arena, render_pass_list *PassList);
+render_batch_list * PushGizmoGroupParams  (gizmo_group_params *Params, memory_arena *Arena, render_pass_list *PassList);
+                                          
+void                PushMeshBatchParams   (mesh_batch_params *Params, uint64_t InstancePerBatch, memory_arena *Arena, render_batch_list *BatchList);
+void                PushUIBatchParams     (ui_batch_params *Params, uint64_t InstancePerBatch, memory_arena *Arena, render_batch_list *BatchList);
 
 // =====================================================
 // Frame control

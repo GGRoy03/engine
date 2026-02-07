@@ -29,6 +29,13 @@ typedef enum
 } RendererResource_Type;
 
 
+typedef enum Renderer_BuiltinMesh
+{
+    Renderer_BuiltinMesh_Quad = 0,
+    Renderer_BuiltinMesh_Cell = 1,
+} Renderer_BuiltinMesh;
+
+
 typedef enum
 {
     MaterialMap_Color = 0,
@@ -38,13 +45,6 @@ typedef enum
     MaterialMap_Count = 3,
 } MaterialMap_Type;
 
-
-typedef struct
-{
-    vec3 Position;
-    vec2 Texture;
-    vec3 Normal;
-} mesh_vertex_data;
 
 
 typedef struct
@@ -109,7 +109,7 @@ typedef struct
 
 
 resource_handle             GetBuiltinMaterial           (renderer *Renderer, engine_memory *Memory);
-resource_handle             GetBuiltinQuadMesh           (renderer *Renderer, engine_memory *Memory);
+resource_handle             GetBuiltinMesh               (Renderer_BuiltinMesh Mesh, renderer *Renderer, memory_arena *Arena);
 
 resource_uuid               MakeResourceUUID             (byte_string PathToResource);
 resource_state              FindResourceByUUID           (resource_uuid UUID, resource_reference_table *Table);

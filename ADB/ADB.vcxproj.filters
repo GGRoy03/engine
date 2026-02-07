@@ -45,6 +45,12 @@
     <ClInclude Include="engine\rendering\resources.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="game\world\chunk.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="engine\rendering\draw.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="engine\rendering\renderer.c">
@@ -75,6 +81,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="engine\rendering\resources.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="game\world\chunk.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="engine\rendering\draw.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

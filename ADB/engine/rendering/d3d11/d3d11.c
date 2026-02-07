@@ -23,6 +23,8 @@
 #include "mesh_pixel_shader.h"
 #include "ui_vertex_shader.h"
 #include "ui_pixel_shader.h"
+#include "gizmo_vertex_shader.h"
+#include "gizmo_pixel_shader.h"
 
 
 #define MAX_MATERIAL_COUNT 64
@@ -58,8 +60,18 @@ typedef struct
     ID3D11RasterizerState *UIRasterizerState;
     ID3D11Buffer          *UIBatchUniformBuffer;
     ID3D11Buffer          *UIVertexBuffer;
+
+    // Gizmo Objects
+
+    ID3D11InputLayout    *GizmoInputLayout;
+    ID3D11VertexShader   *GizmoVertexShader;
+    ID3D11PixelShader    *GizmoPixelShader;
+    ID3D11Buffer         *GizmoBatchUniformBuffer;
+    ID3D11Buffer         *GizmoVertexBuffer;
 } d3d11_renderer;
 
+
+// TODO: These are not specific to D3D11?
 
 typedef struct
 {
@@ -90,6 +102,14 @@ typedef struct
     float AtlasSizeX;
     float AtlasSizeY;
 } d3d11_ui_batch_data;
+
+
+typedef struct
+{
+    mat4x4 World;
+    mat4x4 View;
+    mat4x4 Projection;
+} d3d11_gizmo_batch_data;
 
 
 d3d11_renderer *
@@ -190,6 +210,18 @@ D3D11Initialize(HWND HWindow, int Width, int Height, memory_arena *Arena)
             Result->Device->lpVtbl->CreatePixelShader (Result->Device, UIPixelShaderBytes , sizeof(UIPixelShaderBytes) , 0, &Result->UIPixelShader );
             Result->Device->lpVtbl->CreateInputLayout (Result->Device, InputLayout, ARRAYSIZE(InputLayout), UIVertexShaderBytes, sizeof(UIVertexShaderBytes), &Result->UIInputLayout);
         }
+
+        {
+            D3D11_INPUT_ELEMENT_DESC InputLayout[] =
+            {
+                {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0},
+                {"COLOR"   , 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0},
+            };
+
+            Result->Device->lpVtbl->CreateVertexShader(Result->Device, GizmoVertexShaderBytes, sizeof(GizmoVertexShaderBytes), 0, &Result->GizmoVertexShader);
+            Result->Device->lpVtbl->CreatePixelShader (Result->Device, GizmoPixelShaderBytes , sizeof(GizmoPixelShaderBytes) , 0, &Result->GizmoPixelShader);
+            Result->Device->lpVtbl->CreateInputLayout(Result->Device, InputLayout, ARRAYSIZE(InputLayout), GizmoVertexShaderBytes, sizeof(GizmoVertexShaderBytes), &Result->GizmoInputLayout);
+        }
     }
 
     // Uniform Buffers
@@ -214,7 +246,7 @@ D3D11Initialize(HWND HWindow, int Width, int Height, memory_arena *Arena)
             
             };
             
-            Result->Device->lpVtbl->CreateBuffer(Result->Device,&Desc,0, &Result->MeshLightUniformBuffer);
+            Result->Device->lpVtbl->CreateBuffer(Result->Device, &Desc, 0, &Result->MeshLightUniformBuffer);
         }
 
         {
@@ -229,6 +261,16 @@ D3D11Initialize(HWND HWindow, int Width, int Height, memory_arena *Arena)
             
             Result->Device->lpVtbl->CreateBuffer(Result->Device, &Desc,0, &Result->UIBatchUniformBuffer);
         }
+
+        {
+            D3D11_BUFFER_DESC Desc = {0};
+            Desc.ByteWidth      = sizeof(d3d11_gizmo_batch_data);
+            Desc.Usage          = D3D11_USAGE_DYNAMIC;
+            Desc.BindFlags      = D3D11_BIND_CONSTANT_BUFFER;
+            Desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+            
+            Result->Device->lpVtbl->CreateBuffer(Result->Device, &Desc, 0, &Result->GizmoBatchUniformBuffer);
+        }
     }
 
     {
@@ -241,6 +283,18 @@ D3D11Initialize(HWND HWindow, int Width, int Height, memory_arena *Arena)
         };
 
         Result->Device->lpVtbl->CreateBuffer(Result->Device, &Desc, NULL, &Result->UIVertexBuffer);
+    }
+
+    {
+        D3D11_BUFFER_DESC Desc =
+        {
+            .ByteWidth      = KiB(64),
+            .Usage          = D3D11_USAGE_DYNAMIC,
+            .BindFlags      = D3D11_BIND_VERTEX_BUFFER,
+            .CPUAccessFlags = D3D11_CPU_ACCESS_WRITE,
+        };
+
+        Result->Device->lpVtbl->CreateBuffer(Result->Device, &Desc, NULL, &Result->GizmoVertexBuffer);
     }
 
     // Blending
@@ -488,6 +542,97 @@ RendererLeaveFrame(int Width, int Height, engine_memory *EngineMemory, renderer 
         switch (Pass->Type)
         {
 
+        // TODO: This pass might be overly complicated for what we are trying to do. Gizmos are probably batched only once
+        // into some persistent CPU map. Since they do not need to be grouped perhaps we just accept some raw data stream?
+        // Where does that memory come from though. I mean. It's not like it's impossible to do.
+        case RenderPass_Gizmo:
+        {
+            // TODO: If these can be used for the gizmos, we'll just rename.
+            Context->lpVtbl->RSSetState(Context, D3D11->MeshRasterizerState);
+            Context->lpVtbl->IASetPrimitiveTopology(Context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            Context->lpVtbl->IASetInputLayout(Context, D3D11->GizmoInputLayout);
+            Context->lpVtbl->VSSetShader(Context, D3D11->GizmoVertexShader, 0, 0);
+            Context->lpVtbl->PSSetShader(Context, D3D11->GizmoPixelShader, 0, 0);
+
+            render_pass_params_gizmo *PassParams = &Pass->Params.Gizmo;
+
+            for (gizmo_group_node *GroupNode = PassParams->First; GroupNode != 0; GroupNode = GroupNode->Next)
+            {
+                gizmo_group_params *GroupParams = &GroupNode->Params;
+                render_batch_list   BatchList   = GroupNode->BatchList;
+
+                d3d11_gizmo_batch_data Transform =
+                {
+                    .World      = GroupParams->WorldMatrix,
+                    .View       = GroupParams->ViewMatrix,
+                    .Projection = GroupParams->ProjectionMatrix,
+                };
+
+                ID3D11Buffer *UniformBuffer = D3D11->GizmoBatchUniformBuffer;
+                {
+                    D3D11_MAPPED_SUBRESOURCE Mapped;
+                    Context->lpVtbl->Map(Context, (ID3D11Resource *)UniformBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &Mapped);
+                    if (Mapped.pData)
+                    {
+                        memcpy(Mapped.pData, &Transform, sizeof(d3d11_gizmo_batch_data));
+                        Context->lpVtbl->Unmap(Context, (ID3D11Resource *)UniformBuffer, 0);
+                    }
+                }
+
+                // TODO: Duplicate code from UI Pass
+                ID3D11Buffer *VertexBuffer  = D3D11->GizmoVertexBuffer;
+                uint64_t      InstanceCount = 0;
+                {
+                    D3D11_MAPPED_SUBRESOURCE Resource = { 0 };
+                    Context->lpVtbl->Map(Context, (ID3D11Resource *)VertexBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &Resource);
+
+                    uint8_t *WritePointer = Resource.pData;
+                    uint64_t WriteOffset = 0;
+
+                    for (render_batch_node *BatchNode = BatchList.First; BatchNode != 0; BatchNode = BatchNode->Next)
+                    {
+                        render_batch Batch     = BatchNode->Value;
+                        uint64_t     WriteSize = Batch.ByteCount;
+
+                        memcpy(WritePointer + WriteOffset, Batch.Memory, WriteSize);
+
+                        WriteOffset   += WriteSize;
+                        InstanceCount += WriteSize / BatchList.BytesPerInstance;
+                    }
+
+                    Context->lpVtbl->Unmap(Context, (ID3D11Resource *)VertexBuffer, 0);
+                }
+
+                // Input Assembler
+                {
+                    uint32_t Stride = BatchList.BytesPerInstance;
+                    uint32_t Offset = 0;
+
+                    Context->lpVtbl->IASetVertexBuffers(Context, 0, 1, &VertexBuffer, &Stride, &Offset);
+                    Context->lpVtbl->IASetInputLayout(Context, D3D11->GizmoInputLayout);
+                    Context->lpVtbl->IASetPrimitiveTopology(Context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                }
+
+                // Vertex Shader
+                {
+                    Context->lpVtbl->VSSetShader(Context, D3D11->GizmoVertexShader, 0, 0);
+                    Context->lpVtbl->VSSetConstantBuffers(Context, 0, 1, &UniformBuffer);
+                }
+
+                // Pixel Shader
+                {
+                    Context->lpVtbl->PSSetShader(Context, D3D11->GizmoPixelShader, 0, 0);
+                }
+
+                Context->lpVtbl->Draw(Context, InstanceCount, 0);
+            }
+        } break;
+
+        case RenderPass_Chunk:
+        {
+
+        } break;
+
         case RenderPass_Mesh:
         {
             Context->lpVtbl->RSSetState(Context, D3D11->MeshRasterizerState);
@@ -573,6 +718,8 @@ RendererLeaveFrame(int Width, int Height, engine_memory *EngineMemory, renderer 
                     {
                         mesh_instance        *Instance = Batch->Memory + AtByte;
                         renderer_static_mesh *Mesh     = AccessUnderlyingResource(Instance->MeshHandle, Renderer->Resources);
+
+                        // TODO: Mesh could be NULL here.
 
                         // Bind vertex buffer (TODO: Should not be done at this tier!)
                         {

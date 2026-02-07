@@ -56,7 +56,7 @@ DrawComputedLayoutTree(gui_render_command *CommandBuffer, uint32_t CommandBuffer
         
             case Gui_RenderCommand_Rectangle:
             {
-                gui_rect *Rect = PushDataInBatchList(Arena, BatchList, UI_INSTANCE_PER_BATCH);
+                gui_rect *Rect = PushDataInBatchList(Arena, BatchList, 1, UI_INSTANCE_PER_BATCH);
                 if (Rect)
                 {
                     Rect->Bounds        = BoundingBoxFromCommand(Command);
@@ -74,7 +74,7 @@ DrawComputedLayoutTree(gui_render_command *CommandBuffer, uint32_t CommandBuffer
         
             case Gui_RenderCommand_Border:
             {
-                gui_rect *Rect = PushDataInBatchList(Arena, BatchList, UI_INSTANCE_PER_BATCH);
+                gui_rect *Rect = PushDataInBatchList(Arena, BatchList, 1, UI_INSTANCE_PER_BATCH);
                 if (Rect)
                 {
                     Rect->Bounds        = BoundingBoxFromCommand(Command);

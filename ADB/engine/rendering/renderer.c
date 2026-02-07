@@ -76,28 +76,38 @@ AppendNewRenderBatch(memory_arena *Arena, render_batch_list *BatchList, uint64_t
 }
 
 
+// TODO: I think we might need safeguards here. Because we could push an instance count higher than the instance per batch
+// which would be a OOB write.
 
 void *
-PushDataInBatchList(memory_arena *Arena, render_batch_list *BatchList, uint64_t InstancePerBatch)
+PushDataInBatchList(memory_arena *Arena, render_batch_list *BatchList, uint32_t InstanceCount, uint64_t InstancePerBatch)
 {
-    void *Result = 0;
+    void  *Result = 0;
 
-    render_batch_node *Node = BatchList->Last;
-    if (!Node || Node->Value.ByteCount + BatchList->BytesPerInstance > Node->Value.ByteCapacity)
+    render_batch_node *Node           = BatchList->Last;
+    uint64_t           PushedDataSize = InstanceCount * BatchList->BytesPerInstance;
+
+    if (!Node || Node->Value.ByteCount + PushedDataSize > Node->Value.ByteCapacity)
     {
-        Node = AppendNewRenderBatch(Arena, BatchList, InstancePerBatch);
+        render_batch_node *NewNode = AppendNewRenderBatch(Arena, BatchList, InstancePerBatch);
+
+        if (NewNode && Node)
+        {
+            NewNode->MeshParams = Node->MeshParams;
+        }
+
+        Node = NewNode;
     }
 
     if (Node)
     {
         Result = Node->Value.Memory + Node->Value.ByteCount;
 
-        Node->Value.ByteCount += BatchList->BytesPerInstance;
+        Node->Value.ByteCount += InstanceCount * BatchList->BytesPerInstance;
     }
 
     return Result;
 }
-
 
 
 render_batch_list *
@@ -229,6 +239,56 @@ PushUIBatchParams(ui_batch_params *Params, uint64_t InstancePerBatch, memory_are
     }
 }
 
+// TODO: This is just an insane amount of code repetition though.
+render_batch_list *
+PushGizmoGroupParams(gizmo_group_params *Params, memory_arena *Arena, render_pass_list *PassList)
+{
+    render_batch_list *Result = 0;
+
+    render_pass *Pass = GetRenderPass(Arena, RenderPass_Gizmo, PassList);
+    if (Pass)
+    {
+        render_pass_params_gizmo *PassParams = &Pass->Params.Gizmo;
+
+        gizmo_group_node *Group = PassParams->Last;
+        if (!Group)
+        {
+            Group = PushStruct(Arena, gizmo_group_node);
+            if (Group)
+            {
+                Group->Next   = 0;
+                Group->Params = *Params;
+                Group->BatchList.BatchCount       = 0;
+                Group->BatchList.First            = 0;
+                Group->BatchList.Last             = 0;
+                Group->BatchList.BytesPerInstance = sizeof(gizmo_vertex_data);
+            }
+
+            if (!PassParams->First)
+            {
+                PassParams->First = Group;
+                PassParams->Last  = Group;
+            }
+            else if (PassParams->Last)
+            {
+                PassParams->Last->Next = Group;
+                PassParams->Last       = Group;
+            }
+            else
+            {
+                assert(!"INVALID ENGINE STATE");
+            }
+        }
+    }
+
+    if (Pass)
+    {
+        Result = &Pass->Params.Gizmo.Last->BatchList;
+    }
+
+    return Result;
+}
+
 
 // ==============================================
 // <Camera>
@@ -308,7 +368,8 @@ GetCameraProjectionMatrix(camera *Camera)
 {
     mat4x4 Projection = {0};
 
-    float F = 1.f / tanf(Camera->FovY * 0.5f);
+    float FovYRadians = Camera->FovY * (3.1416 / 180.0f);
+    float F           = 1.f / tanf(FovYRadians * 0.5f);
 
     Projection.c0r0 = F / Camera->AspectRatio;
     Projection.c1r1 = F;

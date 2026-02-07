@@ -13,6 +13,8 @@ struct PS_INPUT
     float3 WorldPos : WLDP;
 };
 
+
+// TODO: This is badly grouped I believe.
 cbuffer TransformBuffer : register(b0)
 {
     float4x4 World;
