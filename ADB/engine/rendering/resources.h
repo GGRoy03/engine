@@ -23,7 +23,6 @@ typedef enum
 
     // Composite
     RendererResource_Material,
-    RendererResource_StaticMesh,
 
     RendererResource_Count,
 } RendererResource_Type;
@@ -34,7 +33,6 @@ typedef enum
     MaterialMap_Albedo = 0,
     MaterialMap_Count = 1,
 } MaterialMap_Type;
-
 
 
 typedef struct
@@ -53,20 +51,16 @@ typedef struct
     RendererResource_Type Type;
 } resource_handle;
 
+
 typedef struct
 {
     uint64_t Value;
 } resource_uuid;
 
-typedef struct
-{
-    uint32_t        Id;
-    resource_handle Handle;
-} resource_state;
-
 // 
 // I don't know yet if these types should be exposed. For simplicity, I'll put them here for now.
 
+// TODO: This is not a usable type for most things.
 typedef struct
 {
     void *Data;
@@ -84,22 +78,6 @@ typedef struct
 {
     resource_handle Maps[MaterialMap_Count];
 } renderer_material;
-
-
-typedef struct
-{
-    uint64_t VertexCount;
-    uint64_t VertexStart;
-} renderer_static_submesh;
-
-
-typedef struct
-{
-    resource_handle         VertexBuffer;
-    uint64_t                VertexBufferSize;
-    renderer_static_submesh Submeshes[MAX_SUBMESH_COUNT];
-    uint32_t                SubmeshCount;
-} renderer_static_mesh;
 
 
 resource_uuid               MakeResourceUUID             (byte_string PathToResource);
@@ -120,12 +98,13 @@ void                      * AccessUnderlyingResource     (resource_handle Handle
 // =====================================================
 
 
-resource_handle GetDefaultMaterial  (renderer *Renderer, memory_arena *Arena);
+resource_handle   GetDefaultMaterial           (renderer *Renderer, memory_arena *Arena);
 
 
 // =====================================================
 // [SECTION] RESOURCE QUERIES
 // =====================================================
+
 
 renderer_buffer * GetRendererBufferFromHandle  (resource_handle Handle, renderer_resource_manager *ResourceManager);
 

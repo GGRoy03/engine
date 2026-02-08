@@ -55,7 +55,6 @@ typedef struct renderer_resource
     {
         renderer_backend_resource Backend;
         renderer_material         Material;
-        renderer_static_mesh      StaticMesh;
         renderer_buffer           Buffer;
     };
 } renderer_resource;
@@ -356,11 +355,6 @@ AccessUnderlyingResource(resource_handle Handle, renderer_resource_manager *Reso
         case RendererResource_Material:
         {
             Result = &Resource->Material;
-        } break;
-
-        case RendererResource_StaticMesh:
-        {
-            Result = &Resource->StaticMesh;
         } break;
 
         default:

@@ -20,8 +20,6 @@
 #include "engine/rendering/renderer_internal.h"
 #include <engine/math/matrix.h>
 
-#include "mesh_vertex_shader.h"
-#include "mesh_pixel_shader.h"
 #include "ui_vertex_shader.h"
 #include "ui_pixel_shader.h"
 #include "gizmo_vertex_shader.h"
@@ -43,15 +41,7 @@ typedef struct
 
     // Mesh Objects
 
-    ID3D11InputLayout       *MeshInputLayout;
-    ID3D11VertexShader      *MeshVertexShader;
-    ID3D11PixelShader       *MeshPixelShader;
-    ID3D11SamplerState      *MeshSamplerState;
-    ID3D11RasterizerState   *MeshRasterizerState;
-    ID3D11Buffer            *MeshTransformUniformBuffer;
-    ID3D11Buffer            *MeshLightUniformBuffer;
-    ID3D11DepthStencilView  *MeshDepthView;
-    ID3D11DepthStencilState *MeshDepthState;
+
 
     // UI Objects
 
@@ -66,33 +56,24 @@ typedef struct
 
     // Gizmo Objects
 
-    ID3D11InputLayout    *GizmoInputLayout;
-    ID3D11VertexShader   *GizmoVertexShader;
-    ID3D11PixelShader    *GizmoPixelShader;
-    ID3D11Buffer         *GizmoBatchUniformBuffer;
-    ID3D11Buffer         *GizmoVertexBuffer;
+    ID3D11InputLayout     *GizmoInputLayout;
+    ID3D11VertexShader    *GizmoVertexShader;
+    ID3D11PixelShader     *GizmoPixelShader;
+    ID3D11Buffer          *GizmoBatchUniformBuffer;
+    ID3D11Buffer          *GizmoVertexBuffer;
 
     // Chunk Objects
 
-    ID3D11InputLayout    *ChunkInputLayout;
-    ID3D11VertexShader   *ChunkVertexShader;
-    ID3D11PixelShader    *ChunkPixelShader;
-    ID3D11Buffer         *ChunkBatchUniformBuffer;
-    ID3D11SamplerState   *ChunkSamplerState;
+    ID3D11InputLayout     *ChunkInputLayout;
+    ID3D11VertexShader    *ChunkVertexShader;
+    ID3D11PixelShader     *ChunkPixelShader;
+    ID3D11Buffer          *ChunkBatchUniformBuffer;
+    ID3D11SamplerState    *ChunkSamplerState;
+    ID3D11RasterizerState *ChunkRasterizerState;
 } d3d11_renderer;
 
 
 // TODO: These are not specific to D3D11?
-
-typedef struct
-{
-    mat4x4 World;
-    mat4x4 View;
-    mat4x4 Projection;
-    vec3   CameraPosition;
-    float _Pad0;
-} d3d11_mesh_transform_data;
-
 
 typedef struct
 {
@@ -124,7 +105,7 @@ typedef struct
 
 
 d3d11_renderer *
-D3D11Initialize(HWND HWindow, int Width, int Height, memory_arena *Arena)
+D3D11Initialize(HWND HWindow, memory_arena *Arena)
 {
     d3d11_renderer *Result = PushStruct(Arena, d3d11_renderer);
     memset(Result, 0, sizeof(renderer));
@@ -194,19 +175,6 @@ D3D11Initialize(HWND HWindow, int Width, int Height, memory_arena *Arena)
         {
             D3D11_INPUT_ELEMENT_DESC InputLayout[] =
             {
-                {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0},
-                {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT   , 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0},
-                {"NORMAL"  , 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0},
-            };
-
-            Result->Device->lpVtbl->CreateVertexShader(Result->Device, MeshVertexShaderBytes, sizeof(MeshVertexShaderBytes), 0, &Result->MeshVertexShader);
-            Result->Device->lpVtbl->CreatePixelShader(Result->Device, MeshPixelShaderBytes, sizeof(MeshPixelShaderBytes), 0, &Result->MeshPixelShader);
-            Result->Device->lpVtbl->CreateInputLayout(Result->Device, InputLayout, ARRAYSIZE(InputLayout), MeshVertexShaderBytes, sizeof(MeshVertexShaderBytes), &Result->MeshInputLayout);
-        }
-
-        {
-            D3D11_INPUT_ELEMENT_DESC InputLayout[] =
-            {
                 {"POS" , 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_INSTANCE_DATA, 1},
                 {"FONT", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_INSTANCE_DATA, 1},
                 {"COL" , 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_INSTANCE_DATA, 1},
@@ -249,16 +217,6 @@ D3D11Initialize(HWND HWindow, int Width, int Height, memory_arena *Arena)
 
     // Uniform Buffers
     {
-        {
-            D3D11_BUFFER_DESC Desc = {0};
-            Desc.ByteWidth      = sizeof(d3d11_mesh_transform_data);
-            Desc.Usage          = D3D11_USAGE_DYNAMIC;
-            Desc.BindFlags      = D3D11_BIND_CONSTANT_BUFFER;
-            Desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-            
-            Result->Device->lpVtbl->CreateBuffer(Result->Device,&Desc,0, &Result->MeshTransformUniformBuffer);
-        }
-
         {
             D3D11_BUFFER_DESC Desc =
             {
@@ -344,7 +302,7 @@ D3D11Initialize(HWND HWindow, int Width, int Height, memory_arena *Arena)
             Desc.ComparisonFunc = D3D11_COMPARISON_NEVER;
             Desc.MaxLOD         = D3D11_FLOAT32_MAX;
 
-            Result->Device->lpVtbl->CreateSamplerState(Result->Device, &Desc, &Result->MeshSamplerState);
+            Result->Device->lpVtbl->CreateSamplerState(Result->Device, &Desc, &Result->ChunkSamplerState);
         }
 
         {
@@ -361,44 +319,6 @@ D3D11Initialize(HWND HWindow, int Width, int Height, memory_arena *Arena)
         }
     }
 
-    // Depth Buffers/Views
-    {
-        D3D11_TEXTURE2D_DESC DepthBufferDesc =
-        {
-            .Width            = Width,
-            .Height           = Height,
-            .MipLevels        = 1,
-            .ArraySize        = 1,
-            .Format           = DXGI_FORMAT_D32_FLOAT,
-            .SampleDesc.Count = 1,
-            .Usage            = D3D11_USAGE_DEFAULT,
-            .BindFlags        = D3D11_BIND_DEPTH_STENCIL,
-        };
-
-        ID3D11Texture2D *DepthBuffer = 0;
-        Result->Device->lpVtbl->CreateTexture2D(Result->Device, &DepthBufferDesc, 0, &DepthBuffer);
-
-        D3D11_DEPTH_STENCIL_VIEW_DESC DSVDesc =
-        {
-            .Format        = DepthBufferDesc.Format,
-            .ViewDimension = D3D11_DSV_DIMENSION_TEXTURE2D,
-        };
-
-        Result->Device->lpVtbl->CreateDepthStencilView(Result->Device, (ID3D11Resource *)DepthBuffer, &DSVDesc, &Result->MeshDepthView);
-
-        DepthBuffer->lpVtbl->Release(DepthBuffer);
-
-        D3D11_DEPTH_STENCIL_DESC DepthStencilDesc =
-        {
-            .DepthEnable    = TRUE,
-            .DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ALL,
-            .DepthFunc      = D3D11_COMPARISON_LESS,
-            .StencilEnable  = FALSE,
-        };
-
-        Result->Device->lpVtbl->CreateDepthStencilState(Result->Device, &DepthStencilDesc, &Result->MeshDepthState);
-    }
-
     // Rasterizer Descs
     {
         {
@@ -411,7 +331,7 @@ D3D11Initialize(HWND HWindow, int Width, int Height, memory_arena *Arena)
             Desc.MultisampleEnable     = FALSE;
             Desc.AntialiasedLineEnable = FALSE;
 
-            Result->Device->lpVtbl->CreateRasterizerState(Result->Device, &Desc, &Result->MeshRasterizerState);
+            Result->Device->lpVtbl->CreateRasterizerState(Result->Device, &Desc, &Result->ChunkRasterizerState);
         }
 
         {
@@ -538,7 +458,6 @@ RendererEnterFrame(clear_color Color, renderer *Renderer)
     ID3D11RenderTargetView *RenderView = D3D11->RenderView;
 
     Context->lpVtbl->ClearRenderTargetView(Context, RenderView, (FLOAT *)&Color);
-    Context->lpVtbl->ClearDepthStencilView(Context, D3D11->MeshDepthView, D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1.0f, 0);
 }
 
 
@@ -565,7 +484,7 @@ RendererLeaveFrame(int Width, int Height, engine_memory *EngineMemory, renderer 
         case RenderPass_Gizmo:
         {
             // TODO: If these can be used for the gizmos, we'll just rename.
-            Context->lpVtbl->RSSetState(Context, D3D11->MeshRasterizerState);
+            Context->lpVtbl->RSSetState(Context, D3D11->ChunkRasterizerState);
             Context->lpVtbl->IASetPrimitiveTopology(Context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
             Context->lpVtbl->IASetInputLayout(Context, D3D11->GizmoInputLayout);
             Context->lpVtbl->VSSetShader(Context, D3D11->GizmoVertexShader, 0, 0);
@@ -645,12 +564,12 @@ RendererLeaveFrame(int Width, int Height, engine_memory *EngineMemory, renderer 
 
         case RenderPass_Chunk:
         {
-            Context->lpVtbl->RSSetState(Context, D3D11->MeshRasterizerState);
+            Context->lpVtbl->RSSetState(Context, D3D11->ChunkRasterizerState);
             Context->lpVtbl->IASetPrimitiveTopology(Context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
             Context->lpVtbl->IASetInputLayout(Context, D3D11->ChunkInputLayout);
             Context->lpVtbl->VSSetShader(Context, D3D11->ChunkVertexShader, 0, 0);
             Context->lpVtbl->PSSetShader(Context, D3D11->ChunkPixelShader, 0, 0);
-            Context->lpVtbl->PSSetSamplers(Context, 0, 1, &D3D11->MeshSamplerState);
+            Context->lpVtbl->PSSetSamplers(Context, 0, 1, &D3D11->ChunkSamplerState);
 
             for (render_group_node *GroupNode = Pass->First; GroupNode != 0; GroupNode = GroupNode->Next)
             {
@@ -671,7 +590,7 @@ RendererLeaveFrame(int Width, int Height, engine_memory *EngineMemory, renderer 
                     Context->lpVtbl->Map(Context, (ID3D11Resource *)UniformBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &Mapped);
                     if (Mapped.pData)
                     {
-                        memcpy(Mapped.pData, &BatchData, sizeof(d3d11_mesh_transform_data));
+                        memcpy(Mapped.pData, &BatchData, sizeof(d3d11_chunk_batch_data));
                         Context->lpVtbl->Unmap(Context, (ID3D11Resource *)UniformBuffer, 0);
                     }
                 }

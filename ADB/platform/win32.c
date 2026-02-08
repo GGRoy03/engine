@@ -357,7 +357,7 @@ WinMain(HINSTANCE HInstance, HINSTANCE PrevInstance, LPSTR CmdLine, int CmdShow)
     Win32GetClientSize(WindowHandle, &ClientWidth, &ClientHeight);
 
     renderer *Renderer = PushStruct(EngineMemory.StateMemory, renderer);
-    Renderer->Backend        = D3D11Initialize(WindowHandle, ClientWidth, ClientHeight, EngineMemory.StateMemory);
+    Renderer->Backend        = D3D11Initialize(WindowHandle, EngineMemory.StateMemory);
     Renderer->Resources      = CreateResourceManager(EngineMemory.StateMemory);
     Renderer->ReferenceTable = CreateResourceReferenceTable(EngineMemory.StateMemory);
 
