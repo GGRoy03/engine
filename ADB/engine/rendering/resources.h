@@ -29,20 +29,10 @@ typedef enum
 } RendererResource_Type;
 
 
-typedef enum Renderer_BuiltinMesh
-{
-    Renderer_BuiltinMesh_Quad = 0,
-    Renderer_BuiltinMesh_Cell = 1,
-} Renderer_BuiltinMesh;
-
-
 typedef enum
 {
-    MaterialMap_Color = 0,
-    MaterialMap_Normal = 1,
-    MaterialMap_Roughness = 2,
-
-    MaterialMap_Count = 3,
+    MaterialMap_Albedo = 0,
+    MaterialMap_Count = 1,
 } MaterialMap_Type;
 
 
@@ -52,7 +42,7 @@ typedef struct
     uint32_t    Width;
     uint32_t    Height;
     uint32_t    BytesPerPixel;
-    uint8_t *Data;
+    uint8_t    *Data;
     byte_string Path;
 } loaded_texture;
 
@@ -85,6 +75,13 @@ typedef struct
 
 typedef struct
 {
+    void  *Backend;
+    size_t Size;
+} renderer_buffer;
+
+
+typedef struct
+{
     resource_handle Maps[MaterialMap_Count];
 } renderer_material;
 
@@ -105,14 +102,7 @@ typedef struct
 } renderer_static_mesh;
 
 
-//
-
-
-resource_handle             GetBuiltinMaterial           (renderer *Renderer, engine_memory *Memory);
-resource_handle             GetBuiltinMesh               (Renderer_BuiltinMesh Mesh, renderer *Renderer, memory_arena *Arena);
-
 resource_uuid               MakeResourceUUID             (byte_string PathToResource);
-resource_state              FindResourceByUUID           (resource_uuid UUID, resource_reference_table *Table);
                                                          
 bool                        IsValidResourceHandle        (resource_handle Handle);
 resource_handle             CreateResourceHandle         (resource_uuid UUID, RendererResource_Type Type, renderer_resource_manager *ResourceManager);
@@ -123,3 +113,20 @@ renderer_resource_manager * CreateResourceManager        (memory_arena *Arena);
 resource_reference_table  * CreateResourceReferenceTable (memory_arena *Arena);
 
 void                      * AccessUnderlyingResource     (resource_handle Handle, renderer_resource_manager *ResourceManager);
+
+
+// =====================================================
+// [SECTION] DEFAULT RESOURCES
+// =====================================================
+
+
+resource_handle GetDefaultMaterial  (renderer *Renderer, memory_arena *Arena);
+
+
+// =====================================================
+// [SECTION] RESOURCE QUERIES
+// =====================================================
+
+renderer_buffer * GetRendererBufferFromHandle  (resource_handle Handle, renderer_resource_manager *ResourceManager);
+
+resource_handle   UpdateVertexBuffer           (byte_string BufferName, void *Data, uint64_t Size, memory_arena *Arena, renderer *Renderer);

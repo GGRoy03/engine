@@ -136,6 +136,7 @@
     <ClCompile Include="engine\math\vector.c" />
     <ClCompile Include="engine\rendering\d3d11\d3d11.c" />
     <ClCompile Include="engine\rendering\draw.c" />
+    <ClCompile Include="engine\rendering\renderer_internal.c" />
     <ClCompile Include="engine\rendering\resources.c" />
     <ClCompile Include="game\world\chunk.c" />
     <ClCompile Include="platform\win32.c" />
@@ -149,6 +150,7 @@
     <ClInclude Include="engine\rendering\d3d11\d3d11.h" />
     <ClInclude Include="engine\rendering\draw.h" />
     <ClInclude Include="engine\rendering\renderer.h" />
+    <ClInclude Include="engine\rendering\renderer_internal.h" />
     <ClInclude Include="engine\rendering\resources.h" />
     <ClInclude Include="game\world\chunk.h" />
     <ClInclude Include="platform\platform.h" />

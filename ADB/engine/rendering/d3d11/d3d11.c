@@ -17,6 +17,7 @@
 #include "utilities.h"
 #include "platform/platform.h"
 #include "engine/rendering/renderer.h"
+#include "engine/rendering/renderer_internal.h"
 #include <engine/math/matrix.h>
 
 #include "mesh_vertex_shader.h"
@@ -25,6 +26,8 @@
 #include "ui_pixel_shader.h"
 #include "gizmo_vertex_shader.h"
 #include "gizmo_pixel_shader.h"
+#include "chunk_vertex_shader.h"
+#include "chunk_pixel_shader.h"
 
 
 #define MAX_MATERIAL_COUNT 64
@@ -68,6 +71,14 @@ typedef struct
     ID3D11PixelShader    *GizmoPixelShader;
     ID3D11Buffer         *GizmoBatchUniformBuffer;
     ID3D11Buffer         *GizmoVertexBuffer;
+
+    // Chunk Objects
+
+    ID3D11InputLayout    *ChunkInputLayout;
+    ID3D11VertexShader   *ChunkVertexShader;
+    ID3D11PixelShader    *ChunkPixelShader;
+    ID3D11Buffer         *ChunkBatchUniformBuffer;
+    ID3D11SamplerState   *ChunkSamplerState;
 } d3d11_renderer;
 
 
@@ -81,14 +92,6 @@ typedef struct
     vec3   CameraPosition;
     float _Pad0;
 } d3d11_mesh_transform_data;
-
-
-typedef struct
-{
-    light_source Lights[16];
-    uint32_t     LightCount;
-    vec3        _Pad0;
-} d3d11_mesh_light_data;
 
 
 typedef struct
@@ -110,6 +113,14 @@ typedef struct
     mat4x4 View;
     mat4x4 Projection;
 } d3d11_gizmo_batch_data;
+
+
+typedef struct
+{
+    mat4x4 World;
+    mat4x4 View;
+    mat4x4 Projection;
+} d3d11_chunk_batch_data;
 
 
 d3d11_renderer *
@@ -222,6 +233,18 @@ D3D11Initialize(HWND HWindow, int Width, int Height, memory_arena *Arena)
             Result->Device->lpVtbl->CreatePixelShader (Result->Device, GizmoPixelShaderBytes , sizeof(GizmoPixelShaderBytes) , 0, &Result->GizmoPixelShader);
             Result->Device->lpVtbl->CreateInputLayout(Result->Device, InputLayout, ARRAYSIZE(InputLayout), GizmoVertexShaderBytes, sizeof(GizmoVertexShaderBytes), &Result->GizmoInputLayout);
         }
+
+        {
+            D3D11_INPUT_ELEMENT_DESC InputLayout[] =
+            {
+                {"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0},
+                {"TEXCOORD", 0, DXGI_FORMAT_R32G32_FLOAT   , 0, D3D11_APPEND_ALIGNED_ELEMENT, D3D11_INPUT_PER_VERTEX_DATA, 0},
+            };
+
+            Result->Device->lpVtbl->CreateVertexShader(Result->Device, ChunkVertexShaderBytes, sizeof(ChunkVertexShaderBytes), 0, &Result->ChunkVertexShader);
+            Result->Device->lpVtbl->CreatePixelShader(Result->Device, ChunkPixelShaderBytes, sizeof(ChunkPixelShaderBytes), 0, &Result->ChunkPixelShader);
+            Result->Device->lpVtbl->CreateInputLayout(Result->Device, InputLayout, ARRAYSIZE(InputLayout), ChunkVertexShaderBytes, sizeof(ChunkVertexShaderBytes), &Result->ChunkInputLayout);
+        }
     }
 
     // Uniform Buffers
@@ -234,19 +257,6 @@ D3D11Initialize(HWND HWindow, int Width, int Height, memory_arena *Arena)
             Desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
             
             Result->Device->lpVtbl->CreateBuffer(Result->Device,&Desc,0, &Result->MeshTransformUniformBuffer);
-        }
-
-        {
-            D3D11_BUFFER_DESC Desc =
-            {
-                .ByteWidth      = sizeof(d3d11_mesh_light_data),
-                .Usage          = D3D11_USAGE_DYNAMIC,
-                .BindFlags      = D3D11_BIND_CONSTANT_BUFFER,
-                .CPUAccessFlags = D3D11_CPU_ACCESS_WRITE,
-            
-            };
-            
-            Result->Device->lpVtbl->CreateBuffer(Result->Device, &Desc, 0, &Result->MeshLightUniformBuffer);
         }
 
         {
@@ -270,6 +280,16 @@ D3D11Initialize(HWND HWindow, int Width, int Height, memory_arena *Arena)
             Desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
             
             Result->Device->lpVtbl->CreateBuffer(Result->Device, &Desc, 0, &Result->GizmoBatchUniformBuffer);
+        }
+
+        {
+            D3D11_BUFFER_DESC Desc = {0};
+            Desc.ByteWidth      = sizeof(d3d11_chunk_batch_data);
+            Desc.Usage          = D3D11_USAGE_DYNAMIC;
+            Desc.BindFlags      = D3D11_BIND_CONSTANT_BUFFER;
+            Desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+            
+            Result->Device->lpVtbl->CreateBuffer(Result->Device, &Desc, 0, &Result->ChunkBatchUniformBuffer);
         }
     }
 
@@ -542,9 +562,6 @@ RendererLeaveFrame(int Width, int Height, engine_memory *EngineMemory, renderer 
         switch (Pass->Type)
         {
 
-        // TODO: This pass might be overly complicated for what we are trying to do. Gizmos are probably batched only once
-        // into some persistent CPU map. Since they do not need to be grouped perhaps we just accept some raw data stream?
-        // Where does that memory come from though. I mean. It's not like it's impossible to do.
         case RenderPass_Gizmo:
         {
             // TODO: If these can be used for the gizmos, we'll just rename.
@@ -554,11 +571,9 @@ RendererLeaveFrame(int Width, int Height, engine_memory *EngineMemory, renderer 
             Context->lpVtbl->VSSetShader(Context, D3D11->GizmoVertexShader, 0, 0);
             Context->lpVtbl->PSSetShader(Context, D3D11->GizmoPixelShader, 0, 0);
 
-            render_pass_params_gizmo *PassParams = &Pass->Params.Gizmo;
-
-            for (gizmo_group_node *GroupNode = PassParams->First; GroupNode != 0; GroupNode = GroupNode->Next)
+            for (render_group_node *GroupNode = Pass->First; GroupNode != 0; GroupNode = GroupNode->Next)
             {
-                gizmo_group_params *GroupParams = &GroupNode->Params;
+                gizmo_group_params *GroupParams = &GroupNode->Params.Gizmo;
                 render_batch_list   BatchList   = GroupNode->BatchList;
 
                 d3d11_gizmo_batch_data Transform =
@@ -630,131 +645,78 @@ RendererLeaveFrame(int Width, int Height, engine_memory *EngineMemory, renderer 
 
         case RenderPass_Chunk:
         {
-
-        } break;
-
-        case RenderPass_Mesh:
-        {
             Context->lpVtbl->RSSetState(Context, D3D11->MeshRasterizerState);
             Context->lpVtbl->IASetPrimitiveTopology(Context, D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            Context->lpVtbl->IASetInputLayout(Context, D3D11->MeshInputLayout);
-            Context->lpVtbl->VSSetShader(Context, D3D11->MeshVertexShader, 0, 0);
-            Context->lpVtbl->PSSetShader(Context, D3D11->MeshPixelShader, 0, 0);
-            Context->lpVtbl->OMSetDepthStencilState(Context, D3D11->MeshDepthState, 0);
+            Context->lpVtbl->IASetInputLayout(Context, D3D11->ChunkInputLayout);
+            Context->lpVtbl->VSSetShader(Context, D3D11->ChunkVertexShader, 0, 0);
+            Context->lpVtbl->PSSetShader(Context, D3D11->ChunkPixelShader, 0, 0);
             Context->lpVtbl->PSSetSamplers(Context, 0, 1, &D3D11->MeshSamplerState);
 
-            render_pass_params_mesh *PassParams = &Pass->Params.Mesh;
-
-            for (mesh_group_node *GroupNode = PassParams->First; GroupNode != 0; GroupNode = GroupNode->Next)
+            for (render_group_node *GroupNode = Pass->First; GroupNode != 0; GroupNode = GroupNode->Next)
             {
-                mesh_group_params *GroupParams = &GroupNode->Params;
+                chunk_group_params *GroupParams = &GroupNode->Params.Chunk;
+                render_batch_list   BatchList   = GroupNode->BatchList;
 
-                d3d11_mesh_transform_data Transform =
+                d3d11_chunk_batch_data BatchData =
                 {
-                    .World          = GroupParams->WorldMatrix,
-                    .View           = GroupParams->ViewMatrix,
-                    .Projection     = GroupParams->ProjectionMatrix,
-                    .CameraPosition = GroupParams->CameraPosition,
+                    .World      = GroupParams->WorldMatrix,
+                    .View       = GroupParams->ViewMatrix,
+                    .Projection = GroupParams->ProjectionMatrix,
                 };
 
-                d3d11_mesh_light_data Light =
-                {
-                    .LightCount = GroupParams->LightCount,
-                };
-                memcpy(Light.Lights, GroupParams->Lights, GroupParams->LightCount * sizeof(light_source));
-
+                // Upload batch data constant buffer.
+                ID3D11Buffer *UniformBuffer = D3D11->ChunkBatchUniformBuffer;
                 {
                     D3D11_MAPPED_SUBRESOURCE Mapped;
-                    Context->lpVtbl->Map(Context, (ID3D11Resource *)D3D11->MeshTransformUniformBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &Mapped);
+                    Context->lpVtbl->Map(Context, (ID3D11Resource *)UniformBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &Mapped);
                     if (Mapped.pData)
                     {
-                        memcpy(Mapped.pData, &Transform, sizeof(d3d11_mesh_transform_data));
-                        Context->lpVtbl->Unmap(Context, (ID3D11Resource *)D3D11->MeshTransformUniformBuffer, 0);
+                        memcpy(Mapped.pData, &BatchData, sizeof(d3d11_mesh_transform_data));
+                        Context->lpVtbl->Unmap(Context, (ID3D11Resource *)UniformBuffer, 0);
                     }
                 }
 
-                {
-                    D3D11_MAPPED_SUBRESOURCE Mapped;
-                    Context->lpVtbl->Map(Context, (ID3D11Resource *)D3D11->MeshLightUniformBuffer, 0, D3D11_MAP_WRITE_DISCARD, 0, &Mapped);
-                    if (Mapped.pData)
-                    {
-                        memcpy(Mapped.pData, &Light, sizeof(d3d11_mesh_light_data));
-                        Context->lpVtbl->Unmap(Context, (ID3D11Resource *)D3D11->MeshLightUniformBuffer, 0);
-                    }
-                }
+                Context->lpVtbl->VSSetConstantBuffers(Context, 0, 1, &UniformBuffer);
 
-                // TODO: Group these into an array so we can do a single upload.
-                Context->lpVtbl->VSSetConstantBuffers(Context, 0, 1, &D3D11->MeshTransformUniformBuffer);
-                Context->lpVtbl->PSSetConstantBuffers(Context, 1, 1, &D3D11->MeshLightUniformBuffer);
-
-                // Iterate batches (tier 2: material params)
                 for (render_batch_node *BatchNode = GroupNode->BatchList.First; BatchNode != 0; BatchNode = BatchNode->Next)
                 {
-                    render_batch      *Batch       = &BatchNode->Value;
-                    mesh_batch_params *BatchParams = &BatchNode->MeshParams;
+                    render_batch       *Batch       = &BatchNode->Value;
+                    chunk_batch_params *BatchParams = &BatchNode->Params.Chunk;
 
                     {
                         renderer_material *Material = AccessUnderlyingResource(BatchParams->Material, Renderer->Resources);
                         assert(Material);
 
-                        renderer_backend_resource *ColorResource     = AccessUnderlyingResource(Material->Maps[MaterialMap_Color], Renderer->Resources);
-                        ID3D11ShaderResourceView  *ColorView         = ColorResource ? (ID3D11ShaderResourceView *)ColorResource->Data : 0;
-                        renderer_backend_resource *NormalResource    = AccessUnderlyingResource(Material->Maps[MaterialMap_Normal], Renderer->Resources);
-                        ID3D11ShaderResourceView  *NormalView        = NormalResource ? (ID3D11ShaderResourceView *)NormalResource->Data : 0;
-                        renderer_backend_resource *RoughnessResource = AccessUnderlyingResource(Material->Maps[MaterialMap_Roughness], Renderer->Resources);
-                        ID3D11ShaderResourceView  *RoughnessView     = RoughnessResource ? (ID3D11ShaderResourceView *)RoughnessResource->Data : 0;
+                        renderer_backend_resource *ColorResource = AccessUnderlyingResource(Material->Maps[MaterialMap_Albedo], Renderer->Resources);
+                        ID3D11ShaderResourceView  *ColorView     = ColorResource ? (ID3D11ShaderResourceView *)ColorResource->Data : 0;
 
                         Context->lpVtbl->PSSetShaderResources(Context, 0, 1, &ColorView);
-                        Context->lpVtbl->PSSetShaderResources(Context, 1, 1, &NormalView);
-                        Context->lpVtbl->PSSetShaderResources(Context, 2, 1, &RoughnessView);
                     }
 
-                    // Iterate Instances (tier3: Transforms/Submesh)
-
-                    uint32_t InstanceCount = Batch->ByteCount / sizeof(mesh_instance);
-                    uint64_t AtByte        = 0;
-
-                    for (uint32_t InstanceIdx = 0; InstanceIdx < InstanceCount; ++InstanceIdx)
                     {
-                        mesh_instance        *Instance = Batch->Memory + AtByte;
-                        renderer_static_mesh *Mesh     = AccessUnderlyingResource(Instance->MeshHandle, Renderer->Resources);
+                        renderer_buffer *RendererBuffer = GetRendererBufferFromHandle(BatchParams->VertexBuffer, Renderer->Resources);
+                        assert(RendererBuffer); // Maybe change this to a hard check.
 
-                        // TODO: Mesh could be NULL here.
+                        ID3D11Buffer *VertexBuffer = (ID3D11Buffer *)RendererBuffer->Backend;
 
-                        // Bind vertex buffer (TODO: Should not be done at this tier!)
-                        {
-                            renderer_backend_resource *VertexBufferBD = AccessUnderlyingResource(Mesh->VertexBuffer, Renderer->Resources);
-                            ID3D11Buffer              *VertexBuffer   = (ID3D11Buffer *)VertexBufferBD->Data;
-
-                            UINT32 Stride = sizeof(mesh_vertex_data);
-                            UINT32 Offset = 0;
-                            Context->lpVtbl->IASetVertexBuffers(Context, 0, 1, &VertexBuffer, &Stride, &Offset);
-                        }
-
-                        // Draw each submesh (TODO: Should read which submesh we are trying to draw?)
-                        for (uint32_t SubmeshIdx = 0; SubmeshIdx < Mesh->SubmeshCount; ++SubmeshIdx)
-                        {
-                            renderer_static_submesh *Submesh = &Mesh->Submeshes[SubmeshIdx];
-                            Context->lpVtbl->Draw(Context, Submesh->VertexCount, Submesh->VertexStart);
-                        }
-
-                        AtByte += sizeof(mesh_instance);
+                        UINT32 Stride = sizeof(tile_vertex_data);
+                        UINT32 Offset = 0;
+                        Context->lpVtbl->IASetVertexBuffers(Context, 0, 1, &VertexBuffer, &Stride, &Offset);
                     }
+
+                    Context->lpVtbl->Draw(Context, BatchParams->VertexCount, 0);
                 }
             }
         } break;
-
 
         case RenderPass_UI:
         {
             Context->lpVtbl->RSSetState(Context, D3D11->UIRasterizerState);
             Context->lpVtbl->OMSetBlendState(Context, D3D11->UIBlendState, 0, 0xFFFFFFFF);
 
-            render_pass_params_ui *PassParams = &Pass->Params.UI;
-
-            for (ui_group_node *GroupNode = PassParams->First; GroupNode != 0; GroupNode = GroupNode->Next)
+            for (render_group_node *GroupNode = Pass->First; GroupNode != 0; GroupNode = GroupNode->Next)
             {
-                ui_group_params  *GroupParams = &GroupNode->Params;
+                ui_group_params  *GroupParams = &GroupNode->Params.UI;
                 render_batch_list BatchList   = GroupNode->BatchList;
 
                 ID3D11Buffer *VertexBuffer  = D3D11->UIVertexBuffer;

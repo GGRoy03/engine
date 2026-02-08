@@ -6,62 +6,8 @@
 #include <stdint.h>
 
 #include "resources.h"
-#include "renderer.h"
+#include "renderer_internal.h"
 #include "platform/platform.h"
-
-
-// =====================================================
-// Static Geometry / Data
-// =====================================================
-
-
-static mesh_vertex_data QuadVertices[6] =
-{
-	{.Position = {-0.5f, -0.5f, 0.0f}, .Texture = {0, 1}, .Normal = {0, 0, 1}},
-	{.Position = { 0.5f, -0.5f, 0.0f}, .Texture = {1, 1}, .Normal = {0, 0, 1}},
-	{.Position = { 0.5f,  0.5f, 0.0f}, .Texture = {1, 0}, .Normal = {0, 0, 1}},
-
-	{.Position = {-0.5f, -0.5f, 0.0f}, .Texture = {0, 1}, .Normal = {0, 0, 1}},
-	{.Position = { 0.5f,  0.5f, 0.0f}, .Texture = {1, 0}, .Normal = {0, 0, 1}},
-	{.Position = {-0.5f,  0.5f, 0.0f}, .Texture = {0, 0}, .Normal = {0, 0, 1}},
-};
-
-
-static mesh_vertex_data GridCellVertices[24] =
-{
-    {.Position = {-0.5f, -0.5f, 0.0f}, .Texture = {0, 1}, .Normal = {0, 0, 1} },
-    {.Position = { 0.5f, -0.5f, 0.0f}, .Texture = {1, 1}, .Normal = {0, 0, 1} },
-    {.Position = { 0.5f, -0.45f, 0.0f}, .Texture = {1, 0}, .Normal = {0, 0, 1} },
-
-    {.Position = {-0.5f, -0.5f, 0.0f}, .Texture = {0, 1}, .Normal = {0, 0, 1} },
-    {.Position = { 0.5f, -0.45f, 0.0f}, .Texture = {1, 0}, .Normal = {0, 0, 1} },
-    {.Position = {-0.5f, -0.45f, 0.0f}, .Texture = {0, 0}, .Normal = {0, 0, 1} },
-
-    {.Position = {-0.5f,  0.45f, 0.0f}, .Texture = {0, 1}, .Normal = {0, 0, 1} },
-    {.Position = { 0.5f,  0.45f, 0.0f}, .Texture = {1, 1}, .Normal = {0, 0, 1} },
-    {.Position = { 0.5f,  0.5f, 0.0f}, .Texture = {1, 0}, .Normal = {0, 0, 1} },
-
-    {.Position = {-0.5f,  0.45f, 0.0f}, .Texture = {0, 1}, .Normal = {0, 0, 1} },
-    {.Position = { 0.5f,  0.5f, 0.0f}, .Texture = {1, 0}, .Normal = {0, 0, 1} },
-    {.Position = {-0.5f,  0.5f, 0.0f}, .Texture = {0, 0}, .Normal = {0, 0, 1} },
-
-    {.Position = {-0.5f, -0.5f, 0.0f}, .Texture = {0, 1}, .Normal = {0, 0, 1} },
-    {.Position = {-0.45f, -0.5f, 0.0f}, .Texture = {1, 1}, .Normal = {0, 0, 1} },
-    {.Position = {-0.45f,  0.5f, 0.0f}, .Texture = {1, 0}, .Normal = {0, 0, 1} },
-
-    {.Position = {-0.5f, -0.5f, 0.0f}, .Texture = {0, 1}, .Normal = {0, 0, 1} },
-    {.Position = {-0.45f,  0.5f, 0.0f}, .Texture = {1, 0}, .Normal = {0, 0, 1} },
-    {.Position = {-0.5f,  0.5f, 0.0f}, .Texture = {0, 0}, .Normal = {0, 0, 1} },
-
-    {.Position = { 0.45f, -0.5f, 0.0f}, .Texture = {0, 1}, .Normal = {0, 0, 1} },
-    {.Position = { 0.5f,  -0.5f, 0.0f}, .Texture = {1, 1}, .Normal = {0, 0, 1} },
-    {.Position = { 0.5f,   0.5f, 0.0f}, .Texture = {1, 0}, .Normal = {0, 0, 1} },
-
-    {.Position = { 0.45f, -0.5f, 0.0f}, .Texture = {0, 1}, .Normal = {0, 0, 1} },
-    {.Position = { 0.5f,   0.5f, 0.0f}, .Texture = {1, 0}, .Normal = {0, 0, 1} },
-    {.Position = { 0.45f,  0.5f, 0.0f}, .Texture = {0, 0}, .Normal = {0, 0, 1} },
-};
-
 
 
 // =====================================================
@@ -110,6 +56,7 @@ typedef struct renderer_resource
         renderer_backend_resource Backend;
         renderer_material         Material;
         renderer_static_mesh      StaticMesh;
+        renderer_buffer           Buffer;
     };
 } renderer_resource;
 
@@ -216,7 +163,7 @@ GetRendererResource(uint32_t Id, renderer_resource_manager *ResourceManager)
 // =====================================================
 
 
-resource_uuid
+static resource_uuid
 MakeResourceUUID(byte_string PathToResource)
 {
     resource_uuid Result = { .Value = HashByteString(PathToResource) };
@@ -224,49 +171,52 @@ MakeResourceUUID(byte_string PathToResource)
 }
 
 
-resource_state
-FindResourceByUUID(resource_uuid UUID, resource_reference_table *Table)
+static resource_handle
+SearchResourceByUUID(resource_uuid UUID, resource_reference_table *Table)
 {
-    resource_reference_entry *Result = 0;
+    resource_handle Result = MakeInvalidResourceHandle();
 
-    uint32_t *Slot = GetSlotPointer(UUID, Table);
-    uint32_t  EntryIndex = *Slot;
-    while (EntryIndex != INVALID_RESOURCE_ENTRY)
+    if (Table)
     {
-        resource_reference_entry *Entry = GetEntry(EntryIndex, Table);
-        if (ResourceUUIDAreEqual(Entry->UUID, UUID))
+        uint32_t *Slot       = GetSlotPointer(UUID, Table);
+        uint32_t  EntryIndex = *Slot;
+
+        while (EntryIndex != INVALID_RESOURCE_ENTRY)
         {
-            Result = Entry;
-            break;
-        }
+            resource_reference_entry *Entry = GetEntry(EntryIndex, Table);
+            if (ResourceUUIDAreEqual(Entry->UUID, UUID))
+            {
+                Result = Entry->Handle;
+                break;
+            }
 
-        EntryIndex = Entry->NextSameHash;
-    }
-
-    if (!Result)
-    {
-        uint32_t Free = PopFreeEntry(Table);
-        if (Free != INVALID_RESOURCE_ENTRY)
-        {
-            resource_reference_entry *Entry = GetEntry(Free, Table);
-            Entry->UUID = UUID;
-            Entry->NextSameHash = *Slot;
-
-            *Slot = Free;
-
-            EntryIndex = Free;
-            Result = Entry;
+            EntryIndex = Entry->NextSameHash;
         }
     }
 
-    resource_state State =
-    {
-        .Id = EntryIndex,
-        .Handle = Result ? Result->Handle : (resource_handle) { .Value = INVALID_RESOURCE_HANDLE, .Type = RendererResource_None },
-    };
-
-    return State;
+    return Result;
 }
+
+static void
+InsertResourceReference(resource_uuid UUID, resource_handle Handle, resource_reference_table *Table)
+{
+    if (Table)
+    {
+        uint32_t *HashSlot  = GetSlotPointer(UUID, Table);
+        uint32_t  FreeEntry = PopFreeEntry(Table);
+
+        if (FreeEntry != INVALID_RESOURCE_ENTRY)
+        {
+            resource_reference_entry *Entry = GetEntry(FreeEntry, Table);
+            Entry->UUID         = UUID;
+            Entry->NextSameHash = *HashSlot;
+            Entry->Handle       = Handle;
+
+            *HashSlot  = FreeEntry;
+        }
+    }
+}
+
 
 // Maybe expose this with params?? Same params as the resource_manager basically.
 
@@ -299,6 +249,7 @@ CreateResourceReferenceTable(memory_arena *Arena)
 }
 
 
+// TODO: Should we allow that?
 resource_handle
 CreateResourceHandle(resource_uuid UUID, RendererResource_Type Type, renderer_resource_manager *ResourceManager)
 {
@@ -325,6 +276,7 @@ CreateResourceHandle(resource_uuid UUID, RendererResource_Type Type, renderer_re
 }
 
 
+// TODO: Don't think this is useful outside of internal code?
 bool
 IsValidResourceHandle(resource_handle Handle)
 {
@@ -333,6 +285,7 @@ IsValidResourceHandle(resource_handle Handle)
 }
 
 
+// TODO: I still don't know about this. Is there a simpler way?
 resource_handle
 BindResourceHandle(resource_handle Handle, renderer_resource_manager *ResourceManager)
 {
@@ -347,7 +300,7 @@ BindResourceHandle(resource_handle Handle, renderer_resource_manager *ResourceMa
     return Handle;
 }
 
-
+// TODO: I still don't know about this. Is there a simpler way?
 resource_handle
 UnbindResourceHandle(resource_handle Handle, renderer_resource_manager *ResourceManager)
 {
@@ -375,24 +328,7 @@ UnbindResourceHandle(resource_handle Handle, renderer_resource_manager *Resource
 }
 
 
-resource_handle
-FindOrCreateResource(resource_uuid UUID, RendererResource_Type Type, renderer_resource_manager *Resources, resource_reference_table *RefTable)
-{
-    resource_state State = FindResourceByUUID(UUID, RefTable);
-
-    if (!IsValidResourceHandle(State.Handle))
-    {
-        resource_handle Handle = CreateResourceHandle(UUID, Type, Resources);
-
-        UpdateResourceReferenceTable(State.Id, Handle, RefTable);
-
-        return Handle;
-    }
-
-    return State.Handle;
-}
-
-
+// TODO: Change this to specific queries?
 void *
 AccessUnderlyingResource(resource_handle Handle, renderer_resource_manager *ResourceManager)
 {
@@ -408,9 +344,13 @@ AccessUnderlyingResource(resource_handle Handle, renderer_resource_manager *Reso
 
         case RendererResource_Texture2D:
         case RendererResource_TextureView:
-        case RendererResource_VertexBuffer:
         {
             Result = &Resource->Backend;
+        } break;
+
+        case RendererResource_VertexBuffer:
+        {
+            Result = &Resource->Buffer;
         } break;
 
         case RendererResource_Material:
@@ -475,46 +415,48 @@ CreateResourceManager(memory_arena *Arena)
 }
 
 
+// =====================================================
+// [SECTION] DEFAULT RESOURCES
+// =====================================================
+
+
 resource_handle
-GetBuiltinMaterial(renderer *Renderer, engine_memory *Memory)
+GetDefaultMaterial(renderer *Renderer, memory_arena *Arena)
 {
-	if(!Renderer || !Memory)
+	if(!Renderer || !Arena)
 	{
 		return MakeInvalidResourceHandle();
 	}
 
-    resource_uuid   MaterialUUID   = MakeResourceUUID(ByteStringLiteral("builtin::material"));
-    resource_state  MaterialState  = FindResourceByUUID(MaterialUUID, Renderer->ReferenceTable);
-    resource_handle MaterialHandle = MaterialState.Handle;
+    resource_uuid   MaterialUUID   = MakeResourceUUID(ByteStringLiteral("default::material"));
+    resource_handle MaterialHandle = SearchResourceByUUID(MaterialUUID, Renderer->ReferenceTable);
 
     if (!IsValidResourceHandle(MaterialHandle))
     {
         MaterialHandle = CreateResourceHandle(MaterialUUID, RendererResource_Material, Renderer->Resources);
-        if (!IsValidResourceHandle(MaterialHandle))
-        {
-            return MakeInvalidResourceHandle();
-        }
+        assert(IsValidResourceHandle(MaterialHandle));
 
-        UpdateResourceReferenceTable(MaterialState.Id, MaterialHandle, Renderer->ReferenceTable);
+        InsertResourceReference(MaterialUUID, MaterialHandle, Renderer->ReferenceTable);
 
-        // This blob of code should just be static inside the file.
+        // TODO: Simplify this code path.
 
         uint32_t Width         = 1024;
         uint32_t Height        = 1024;
         uint32_t BytesPerPixel = 4;
-        uint8_t *Data          = PushArray(Memory->FrameMemory, uint8_t, Width * Height * BytesPerPixel);
+        uint8_t *Data          = PushArray(Arena, uint8_t, Width * Height * BytesPerPixel);
 
         if (!Data)
         {
             return MakeInvalidResourceHandle();
         }
         
+        // We don't need this stupid type.
         loaded_texture Diffuse =
         {
             .BytesPerPixel = BytesPerPixel,
             .Width         = Width,
             .Height        = Height,
-            .Path          = ByteStringLiteral("builtin::material::diffuse"),
+            .Path          = ByteStringLiteral("default::material::diffuse"),
             .Data          = Data,
         };
         
@@ -523,25 +465,21 @@ GetBuiltinMaterial(renderer *Renderer, engine_memory *Memory)
             Data[Idx] = 255;
         }
 
-        resource_uuid   TextureUUID   = MakeResourceUUID(Diffuse.Path);
-        resource_state  TextureState  = FindResourceByUUID(TextureUUID, Renderer->ReferenceTable);
-        resource_handle TextureHandle = TextureState.Handle;
+        resource_uuid   TextureUUID   = MakeResourceUUID(ByteStringLiteral("default::material::diffuse"));
+        resource_handle TextureHandle = SearchResourceByUUID(TextureUUID, Renderer->ReferenceTable);
 
         if (!IsValidResourceHandle(TextureHandle))
         {
             TextureHandle = CreateResourceHandle(TextureUUID, RendererResource_TextureView, Renderer->Resources);
-            if (!IsValidResourceHandle(TextureHandle))
-            {
-                return MakeInvalidResourceHandle();
-            }
+            assert(IsValidResourceHandle(TextureHandle));
 
-            UpdateResourceReferenceTable(TextureState.Id, TextureHandle, Renderer->ReferenceTable);
+            InsertResourceReference(TextureUUID, TextureHandle, Renderer->ReferenceTable);
 
             renderer_backend_resource *BackendResource = AccessUnderlyingResource(TextureHandle, Renderer->Resources);
             BackendResource->Data = RendererCreateTexture(Diffuse, Renderer);
 
             renderer_material *Material = AccessUnderlyingResource(MaterialHandle, Renderer->Resources);
-            Material->Maps[MaterialMap_Color] = BindResourceHandle(TextureHandle, Renderer->Resources);
+            Material->Maps[MaterialMap_Albedo] = BindResourceHandle(TextureHandle, Renderer->Resources);
         }
     }
 
@@ -549,83 +487,77 @@ GetBuiltinMaterial(renderer *Renderer, engine_memory *Memory)
 }
 
 
-resource_handle
-GetBuiltinMesh(Renderer_BuiltinMesh Mesh, renderer *Renderer, memory_arena *Arena)
+// =====================================================
+// [SECTION] RESOURCE QUERIES
+// [HISTORY]
+//  -2/7/2026: VertexBuffer Update Call & Basic Getters
+// =====================================================
+
+
+static resource_handle
+GetVertexBufferHandle(byte_string Name, memory_arena *Arena, renderer *Renderer)
 {
-    if (!Renderer || !Arena)
+    if (!IsValidByteString(Name) || !Arena || !Renderer)
     {
         return MakeInvalidResourceHandle();
     }
 
-    byte_string       MeshName     = ByteString(0, 0);
-    mesh_vertex_data *MeshData     = 0;
-    size_t            MeshDataSize = 0;
-    uint32_t          VertexCount  = 0;
+    byte_string     BufferNameParts[2] = { Name, ByteStringLiteral("geometry") };
+    byte_string     BufferName = ConcatenateStrings(BufferNameParts, 2, ByteStringLiteral("::"), Arena);
+    resource_uuid   BufferUUID = MakeResourceUUID(BufferName);
+    resource_handle BufferHandle = SearchResourceByUUID(BufferUUID, Renderer->ReferenceTable);
 
-    switch (Mesh)
+    if (!IsValidResourceHandle(BufferHandle))
     {
-    
-    case Renderer_BuiltinMesh_Quad:
-    {
-        MeshName     = ByteStringLiteral("builtin::quad");
-        MeshData     = QuadVertices;
-        MeshDataSize = sizeof(QuadVertices);
-        VertexCount  = ArrayCount(QuadVertices);
-    } break;
+        BufferHandle = CreateResourceHandle(BufferUUID, RendererResource_VertexBuffer, Renderer->Resources);
+        assert(IsValidResourceHandle(BufferHandle));
 
-    case Renderer_BuiltinMesh_Cell:
-    {
-        MeshName     = ByteStringLiteral("builtin::cell");
-        MeshData     = GridCellVertices;
-        MeshDataSize = sizeof(GridCellVertices);
-        VertexCount  = ArrayCount(GridCellVertices);
-    } break;
-
+        InsertResourceReference(BufferUUID, BufferHandle, Renderer->ReferenceTable);
     }
 
-    if (!IsValidByteString(MeshName) || !MeshData || !MeshDataSize || VertexCount == 0)
-    {
-        return MakeInvalidResourceHandle();
-    }
+    return BufferHandle;
+}
 
-    resource_uuid   MeshUUID   = MakeResourceUUID(MeshName);
-    resource_state  MeshState  = FindResourceByUUID(MeshUUID, Renderer->ReferenceTable);
-    resource_handle MeshHandle = MeshState.Handle;
 
-    if (!IsValidResourceHandle(MeshHandle))
+renderer_buffer *
+GetRendererBufferFromHandle(resource_handle Handle, renderer_resource_manager *ResourceManager)
+{
+    renderer_buffer *Result = 0;
+
+    if (IsValidResourceHandle(Handle) && ResourceManager)
     {
-        MeshHandle = CreateResourceHandle(MeshUUID, RendererResource_StaticMesh, Renderer->Resources);
-        if (!IsValidResourceHandle(MeshHandle))
+        renderer_resource *Resource = GetRendererResource(Handle.Value, ResourceManager);
+        if (Resource && Resource->Type == RendererResource_VertexBuffer)
         {
-            return MakeInvalidResourceHandle();
+            Result = &Resource->Buffer;
         }
-
-        UpdateResourceReferenceTable(MeshState.Id, MeshHandle, Renderer->ReferenceTable);
-
-
-
-        // TODO:
-        // This is weird, and we should probably request a chunk out of some buffer. Fine for now.
-        // This code is beyond beefy. It also calls FindOrCreate which seems like a bad idea.
-        // Also, probably missing some error checks.
-
-        byte_string     VertexBufferNameParts[2] = {MeshName, ByteStringLiteral("geometry")};
-        byte_string     VertexBufferResourceName = ConcatenateStrings(VertexBufferNameParts, 2, ByteStringLiteral("::"), Arena);
-        resource_uuid   VertexBufferUUID         = MakeResourceUUID(VertexBufferResourceName);
-        resource_handle VertexBufferHandle       = FindOrCreateResource(VertexBufferUUID, RendererResource_VertexBuffer, Renderer->Resources, Renderer->ReferenceTable);
-
-        renderer_backend_resource *VertexBuffer     = AccessUnderlyingResource(VertexBufferHandle, Renderer->Resources);
-        uint64_t                   VertexBufferSize = MeshDataSize;
-
-        VertexBuffer->Data = RendererCreateVertexBuffer(MeshData, VertexBufferSize, Renderer);
-
-        renderer_static_mesh *StaticMesh = AccessUnderlyingResource(MeshHandle, Renderer->Resources);
-        StaticMesh->VertexBuffer             = BindResourceHandle(VertexBufferHandle, Renderer->Resources);
-        StaticMesh->VertexBufferSize         = VertexBufferSize;
-        StaticMesh->SubmeshCount             = 1;
-        StaticMesh->Submeshes[0].VertexStart = 0;
-        StaticMesh->Submeshes[0].VertexCount = VertexCount;
     }
 
-    return MeshHandle;
+    return Result;
+}
+
+
+resource_handle
+UpdateVertexBuffer(byte_string BufferName, void *Data, uint64_t Size, memory_arena *Arena, renderer *Renderer)
+{
+    if (!Arena || !Renderer || !IsValidByteString(BufferName))
+    {
+        return MakeInvalidResourceHandle();
+    }
+
+    resource_handle  BufferHandle = GetVertexBufferHandle(BufferName, Arena, Renderer);
+    renderer_buffer *VertexBuffer = AccessUnderlyingResource(BufferHandle, Renderer->Resources);
+
+    if (!VertexBuffer->Backend)
+    {
+        VertexBuffer->Backend = RendererCreateVertexBuffer(Data, Size, Renderer);
+        VertexBuffer->Size    = Size;
+    }
+    else
+    {
+        assert(!"NOT IMPLEMENTED");
+        // Otherwise we have to update the buffer. What if the size differs?
+    }
+
+    return BufferHandle;
 }

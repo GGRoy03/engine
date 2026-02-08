@@ -16,6 +16,7 @@
 #include "platform.h"
 #include "engine/engine.h"
 #include "engine/rendering/renderer.h"
+#include "engine/rendering/renderer_internal.h"
 #include "engine/rendering/d3d11/d3d11.h"
 
 // ==============================================

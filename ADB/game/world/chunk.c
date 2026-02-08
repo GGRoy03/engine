@@ -1,72 +1,94 @@
+#include "chunk.h"
+
 #include <stdint.h>
 
 #include "utilities.h"
 #include "engine/math/vector.h"
-#include "engine/rendering/renderer.h"
+#include "engine/rendering/draw.h"
 #include "engine/rendering/resources.h"
+#include "engine/rendering/renderer_internal.h"
 
-#define CHUNK_SIZE_X 16
-#define CHUNK_SIZE_Y 16
 
-typedef struct
+// TODO: This could be in the draw code, because I doubt we want to handle most of this code here.
+
+static const tile_vertex_data TileQuad[6] =
 {
-	uint8_t Data;
-} tile;
+	// Triangle 1
+	{.Position = {0, 0, 0}, .UV = {0, 0} },
+	{.Position = {1, 0, 0}, .UV = {1, 0} },
+	{.Position = {1, 1, 0}, .UV = {1, 1} },
 
-typedef struct
+	// Triangle 2
+	{.Position = {0, 0, 0}, .UV = {0, 0} },
+	{.Position = {1, 1, 0}, .UV = {1, 1} },
+	{.Position = {0, 1, 0}, .UV = {0, 1} },
+};
+
+
+static tile *
+GetTile(uint32_t X, uint32_t Y, chunk *Chunk)
 {
-	tile             Tiles[CHUNK_SIZE_X * CHUNK_SIZE_Y];
-	uint16_t         SizeX;
-	uint16_t         SizeY;
+	tile    *Result = 0;
+	uint32_t Index  = Y * Chunk->SizeY + X;
 
-	resource_handle  VertexBuffer;
-	uint32_t         VertexCount;
-	tile_vertex_data VertexData[CHUNK_SIZE_X * CHUNK_SIZE_Y];
-
-	vec3             Origin;
-} chunk;
-
-
-// TODO:
-// Mesh-Instance is probably not what we want to push?
-
-chunk CreateChunk(renderer *Renderer, memory_arena *Arena)
-{
-	chunk Result =
+	if (Index < Chunk->SizeX * Chunk->SizeY)
 	{
-		.SizeX  = CHUNK_SIZE_X,
-		.SizeY  = CHUNK_SIZE_Y,
-		.Origin = Vec3(0.0f, 0.0f, 0.0f),
-	};
+		Result = &Chunk->Tiles[Index];
+	}
 
-	for (uint32_t X = 0; X < Result.SizeX; ++X)
+
+	return Result;
+}
+
+static tile_vertex_data *
+GetChunkMeshData(chunk *Chunk, memory_arena *Arena)
+{
+	uint32_t          Count    = 0;
+	tile_vertex_data *Vertices = PushArray(Arena, tile_vertex_data, Chunk->SizeX * Chunk->SizeY * 6);
+
+	for (float Y = 0; Y < Chunk->SizeY; ++Y)
 	{
-		for (uint32_t Y = 0; Y < Result.SizeY; ++Y)
+		for (float X = 0; X < Chunk->SizeX; ++X)
 		{
+			vec3 Offset = Vec3(X, Y, 0);
+
+			for (uint32_t Vertex = 0; Vertex < 6; ++Vertex)
+			{
+				Vertices[Count]          = TileQuad[Vertex];
+				Vertices[Count].Position = Vec3Add(Vertices[Count].Position, Offset);
+
+				++Count;
+			}
 		}
 	}
 
-	// THIS API IS SOMETHING ELSE 
+	Chunk->VertexCount = Count;
+
+	return Vertices;
+}
+
+
+chunk CreateChunk(renderer *Renderer, memory_arena *Arena)
+{
+	chunk Chunk =
 	{
-		byte_string     VertexBufferNameParts[2] = {ByteStringLiteral("my_first_chunk"), ByteStringLiteral("geometry")};
-		byte_string     VertexBufferResourceName = ConcatenateStrings(VertexBufferNameParts, 2, ByteStringLiteral("::"), Arena);
-		resource_uuid   VertexBufferUUID         = MakeResourceUUID(VertexBufferResourceName);
-		resource_handle VertexBufferHandle       = CreateResourceHandle(VertexBufferUUID, RendererResource_VertexBuffer, Renderer->Resources);
+		.SizeX    = CHUNK_SIZE_X,
+		.SizeY    = CHUNK_SIZE_Y,
+		.Material = GetDefaultMaterial(Renderer, Arena),
+	};
 
-		renderer_backend_resource *VertexBuffer     = AccessUnderlyingResource(VertexBufferHandle, Renderer->Resources);
-		uint64_t                   VertexBufferSize = Result.SizeX * Result.SizeY * sizeof(mesh_instance);
 
-		VertexBuffer->Data  = RendererCreateVertexBuffer(Result.VertexData, VertexBufferSize, Renderer);
-		Result.VertexBuffer = BindResourceHandle(VertexBufferHandle, Renderer->Resources);
-	}
+	tile_vertex_data *VertexData     = GetChunkMeshData(&Chunk, Arena);
+	uint64_t          VertexDataSize = Chunk.SizeX * Chunk.SizeY * 6 * sizeof(tile_vertex_data);
 
-	// You probably want a chunk-pass? Because you want to push chunk specific stuff?
-	// Like parameters and all of that? We want to draw the full buffer, so a chunk pass would be asking for a buffer probably.
-	// Also, I don't know if materials are even a thing anymore? Maybe we still draw 3D stuff? Or rather, maybe we still use materials
-	// instead of atlas sampling? Just a fun thing to do?
+	resource_handle VertexBuffer = UpdateVertexBuffer(ByteStringLiteral("chunk_geometry"), VertexData, VertexDataSize, Arena, Renderer);
+	Chunk.VertexBuffer = BindResourceHandle(VertexBuffer, Renderer->Resources);
 
-	// So create a chunk pass that takes in a bunch of stuff, right now it's simply give me some geometry buffer and
-	// how much vertices there are or whatever. Then just blit that buffer... And the camera goes in the same parameters slot.
-	// What is the data inside the chunk though? Raw vertices? Uhm. So
+	return Chunk;
+}
 
+
+void DrawChunk(camera *Camera, renderer *Renderer, memory_arena *Arena, chunk *Chunk)
+{
+	DrawChunkIntance(Chunk->VertexBuffer, Chunk->VertexCount, Chunk->Material, Camera, Renderer, Arena);
 }

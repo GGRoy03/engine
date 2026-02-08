@@ -5,10 +5,9 @@
 #include "engine.h"
 #include "platform/platform.h"
 #include "rendering/renderer.h"
-#include "rendering/resources.h"
 #include "rendering/draw.h"
 #include "math/vector.h"
-#include <stdint.h>
+#include "game/world/chunk.h"
 
 
 // TODO: Clear the renderer API. Just remove all the bullshit and get something basic working.
@@ -20,19 +19,26 @@ UpdateEngine(int WindowWidth, int WindowHeight, gui_input_queue *InputQueue, ren
     RendererEnterFrame((clear_color) { .R = 0.f, .G = 0.f, .B = 0.f, .A = 1.f }, Renderer);
 
 	{
-		camera Camera = CreateCamera(Vec3(0.0f, 0.0f, -5.0f), 60.0f, (float)WindowWidth / (float)WindowHeight);
+		camera Camera = CreateCamera(Vec3(0.0f, 0.0f, -10.0f), 60.0f, (float)WindowWidth / (float)WindowHeight);
 
-		gizmo_group_params Params =
+		//for (float X = -5; X < 5; ++X)
+		//{
+		//	for (float Y = -5; Y < 5; ++Y)
+		//	{
+		//		DrawGizmoCell(Vec3(X, Y, 0.0f), Vec3(1.0f, 1.0f, 1.0f), &Camera, Renderer, EngineMemory->FrameMemory);
+		//	}
+		//}
+
+		static bool  FirstFrame = true;
+		static chunk Chunk     = {0};
+		if (FirstFrame)
 		{
-			.WorldMatrix      = GetCameraWorldMatrix(&Camera),
-			.ViewMatrix       = GetCameraViewMatrix(&Camera),
-			.ProjectionMatrix = GetCameraProjectionMatrix(&Camera),
-		};
+			Chunk = CreateChunk(Renderer, EngineMemory->FrameMemory);
 
-		render_batch_list *BatchList = PushGizmoGroupParams(&Params, EngineMemory->FrameMemory, &Renderer->PassList);
-		DrawGizmoCell(Vec3(0.0f, 0.0f, 0.0f), Vec3(1.0f, 1.0f, 1.0f), BatchList, EngineMemory->FrameMemory);
-		DrawGizmoCell(Vec3(1.0f, 1.0f, 0.0f), Vec3(1.0f, 0.0f, 0.0f), BatchList, EngineMemory->FrameMemory);
-		DrawGizmoCell(Vec3(2.0f, 2.0f, 0.0f), Vec3(0.0f, 0.0f, 1.0f), BatchList, EngineMemory->FrameMemory);
+			FirstFrame = false;
+		}
+
+		DrawChunk(&Camera, Renderer, EngineMemory->FrameMemory, &Chunk);
 	}
 
 
